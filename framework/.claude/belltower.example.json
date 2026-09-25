@@ -1,0 +1,14 @@
+{
+  "project": "My Project",
+  "repo": "owner/name",
+  "codeDirs": ["src"],
+  "codeExt": ["py", "ts", "tsx", "js", "jsx", "sql"],
+  "boards": ["plan", "product", "dev", "data", "ops", "biz", "meta", "test"],
+  "ranges": { "plan": "Q1xx", "product": "Q2xx", "dev": "Q3xx", "data": "Q4xx", "ops": "Q5xx", "biz": "Q6xx", "meta": "Q7xx", "test": "Q8xx" },
+  "timezone": "America/New_York",
+  "sensitiveReminder": "敏感数据默认不进本仓库;每要用一份,先问用户(铁律1)。",
+  "sensitivePaths": {
+    "bash": "((^|[\\s\"'/\\\\])(sensitive|private-data)([/\\\\]|\\s|$)|credentials?\\.json|secrets?\\.json|\\.(pem|pfx|p12)(\\s|$))",
+    "edit": "((^|/)(sensitive|private-data)/|(^|/)credentials?\\.json$|(^|/)secrets?\\.json$|\\.(pem|pfx|p12)$)"
+  }
+}

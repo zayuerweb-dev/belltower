@@ -1,0 +1,25 @@
+name: test
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: git 身份(沙箱测试要提交)
+        run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
+      - name: 全部测试(框架自测 + init/sync + 扫描规则)
+        run: node scripts/test.mjs
+      - name: 泄漏扫描
+        run: node scripts/scan-public.mjs

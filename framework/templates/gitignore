@@ -1,0 +1,37 @@
+# ── 敏感数据:默认拒绝,要放行先问用户(铁律1)────────────────────────
+# 这是**确认闸不是禁令**:真实数据迟早要拿来验证,规矩是不许自动流进来。
+# 要用哪一份、脱敏到什么程度、进不进版本库,逐次问用户,拿到确认再改这里。
+# 路径跟 `.claude/belltower.json` 的 sensitivePaths 对齐(闸门会拦写入和拷贝)。
+sensitive/
+private-data/
+# <!-- 项目填写:本项目的敏感目录 / 文件名,一行一个 -->
+
+# ── 凭据与密钥 ─────────────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+secrets.json
+credentials.json
+*credential*
+*secret*
+
+# ── 构建产物与依赖 ─────────────────────────────────────────────────
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+*.log
+
+# ── 本地私有(框架的运行态)─────────────────────────────────────────
+.claude/settings.local.json
+.claude/.session-state/
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+.DS_Store
+Thumbs.db

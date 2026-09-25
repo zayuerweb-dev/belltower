@@ -1,0 +1,43 @@
+{
+  "name": "belltower",
+  "version": "0.1.0",
+  "upstream": "https://github.com/zayuerweb-dev/belltower",
+  "_comment": "framework = 框架文件,belltower-sync 会覆盖更新;init = 起步模板,只在 belltower-init 时拷一次、之后归项目,sync 永远不碰。路径:src 相对本仓库根,dst 相对项目根。",
+  "framework": [
+    { "src": "framework/.claude/hooks/lib/config.mjs", "dst": ".claude/hooks/lib/config.mjs" },
+    { "src": "framework/.claude/hooks/lib/now.mjs", "dst": ".claude/hooks/lib/now.mjs" },
+    { "src": "framework/.claude/hooks/now.mjs", "dst": ".claude/hooks/now.mjs" },
+    { "src": "framework/.claude/hooks/session-start.mjs", "dst": ".claude/hooks/session-start.mjs" },
+    { "src": "framework/.claude/hooks/guard-bash.mjs", "dst": ".claude/hooks/guard-bash.mjs" },
+    { "src": "framework/.claude/hooks/guard-edit.mjs", "dst": ".claude/hooks/guard-edit.mjs" },
+    { "src": "framework/.claude/hooks/guard-mcp.mjs", "dst": ".claude/hooks/guard-mcp.mjs" },
+    { "src": "framework/.claude/hooks/guard-stop.mjs", "dst": ".claude/hooks/guard-stop.mjs" },
+    { "src": "framework/.claude/settings.json", "dst": ".claude/settings.json" },
+    { "src": "framework/.claude/belltower.example.json", "dst": ".claude/belltower.example.json" },
+    { "src": "framework/.claude/skills/tower-meta/references/tower.md", "dst": ".claude/skills/tower-meta/references/tower.md" },
+    { "src": "framework/.claude/skills/tower-meta/references/dispatch.md", "dst": ".claude/skills/tower-meta/references/dispatch.md" },
+    { "src": "framework/scripts/ledger-push.mjs", "dst": "scripts/ledger-push.mjs" },
+    { "src": "framework/scripts/test-hooks.mjs", "dst": "scripts/test-hooks.mjs" },
+    { "src": "framework/scripts/test-ledger-push.mjs", "dst": "scripts/test-ledger-push.mjs" },
+    { "src": "framework/scripts/vendor-skills.mjs", "dst": "scripts/vendor-skills.mjs" },
+    { "src": "scripts/belltower-sync.mjs", "dst": "scripts/belltower-sync.mjs" }
+  ],
+  "init": [
+    { "src": "framework/templates/CLAUDE.md", "dst": "CLAUDE.md" },
+    { "src": "framework/templates/gitignore", "dst": ".gitignore" },
+    { "src": "framework/.claude/belltower.example.json", "dst": ".claude/belltower.json" },
+    { "src": "framework/.claude/frozen.txt", "dst": ".claude/frozen.txt" },
+    { "src": "framework/templates/docs/BACKLOG.md", "dst": "docs/BACKLOG.md" },
+    { "src": "framework/templates/docs/journal.md", "dst": "docs/journal.md" },
+    { "src": "framework/templates/docs/session-pool.md", "dst": "docs/session-pool.md" },
+    { "src": "framework/templates/docs/gate-log.md", "dst": "docs/gate-log.md" },
+    { "src": "framework/.claude/skills/tower-plan/SKILL.md", "dst": ".claude/skills/tower-plan/SKILL.md" },
+    { "src": "framework/.claude/skills/tower-product/SKILL.md", "dst": ".claude/skills/tower-product/SKILL.md" },
+    { "src": "framework/.claude/skills/tower-dev/SKILL.md", "dst": ".claude/skills/tower-dev/SKILL.md" },
+    { "src": "framework/.claude/skills/tower-data/SKILL.md", "dst": ".claude/skills/tower-data/SKILL.md" },
+    { "src": "framework/.claude/skills/tower-ops/SKILL.md", "dst": ".claude/skills/tower-ops/SKILL.md" },
+    { "src": "framework/.claude/skills/tower-biz/SKILL.md", "dst": ".claude/skills/tower-biz/SKILL.md" },
+    { "src": "framework/.claude/skills/tower-meta/SKILL.md", "dst": ".claude/skills/tower-meta/SKILL.md" },
+    { "src": "framework/.claude/skills/tower-test/SKILL.md", "dst": ".claude/skills/tower-test/SKILL.md" }
+  ]
+}

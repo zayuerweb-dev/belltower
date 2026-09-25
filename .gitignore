@@ -1,0 +1,14 @@
+# belltower 自己的仓库。框架运行态和本地私有一律不进。
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+.claude/settings.local.json
+.claude/.session-state/
+framework/.claude/.session-state/
+framework/docs/
+.claude/worktrees/
+.env
+.env.*
+# 洗词用的项目词表永远不进公开仓库(scan-public --words 从仓库外带进来)
+words*.txt
