@@ -231,7 +231,7 @@
 2. 排一个 20 分钟回查(`send_later`,打回 meta)。回查时逐个 `get_session`:`IDLE` 且摘要 / 最后一行有
    `HANDOFF-READY` → 往下;没有 → **这周跳过**,报给用户。
 3. **归档旧会话** `archive_session` —— **不删除**,转录要能回查(铁律「不认自述、要能回查」)。
-4. **开新会话** `create_session`:`source_url` 本仓库、`source_revision: main`、`title` = 塔名、
+4. **开新会话** `create_session`:`source_url` 本仓库、`source_revision: main`(**必传**,漏了新塔在侧栏落进「Other」)、`title` = 塔名、
    `tags: ["tower", <塔名>]`(**不带 `worker`**,每日清理的第一条判据就认这个标;
    旧会话上的 `config:*` 标签是平台给 MCP 开的会话自动加的,不用照搬);
    `prompt` = 开塔口令一行 + 「上一任的接手须知在 journal 里本塔最新一条」。

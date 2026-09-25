@@ -2,6 +2,7 @@
 // belltower 的总测试入口:CI 跑的就是这一条。退出 0 才算过。
 //   1. 框架自测(framework/scripts/test-hooks.mjs,含 ledger-push 沙箱)
 //   2. init:装进一个空项目 → 在**装好的项目里**再跑一遍框架自测(证明不依赖本仓库)
+//   2b. init --preset:只装选中的板块;预设表跟 README 一致
 //   3. sync:预演不写、--apply 才写、项目自己的文件不碰
 //   4. scan-public:本仓库零命中;每条规则各埋一个雷,都要扫得出来
 import { spawnSync, execFileSync } from "node:child_process";
@@ -59,6 +60,44 @@ execFileSync("git", ["init", "-q"], { cwd: P });
   const conflict = node(join(ROOT, "scripts/belltower-init.mjs"), [P]);
   assert("再 init 一次:框架文件被改过 → 报冲突、退出 1、不覆盖",
     conflict.status === 1 && /冲突/.test(conflict.stdout) && readFileSync(join(P, ".claude/hooks/now.mjs"), "utf8").includes("项目就地改过"), conflict.stdout);
+}
+
+// ── 2b. init --preset ───────────────────────────────────────────────────
+{
+  const { presets } = JSON.parse(readFileSync(join(ROOT, "presets.json"), "utf8"));
+  for (const [k, p] of Object.entries(presets)) {
+    assert(`预设 ${k}:含 meta、每个板块都有开塔时机、都是框架里有的板块`,
+      p.boards.includes("meta") && p.boards.every((b) => p.open[b] && existsSync(join(ROOT, `framework/.claude/skills/tower-${b}/SKILL.md`))),
+      JSON.stringify(p));
+  }
+  const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+  const drift = Object.entries(presets).filter(([k, p]) => !readme.includes(`| \`${k}\` | ${p.boards.join(" · ")} |`));
+  assert("README 的预设表跟 presets.json 一致(两处语言各一张)",
+    !drift.length && Object.keys(presets).every((k) => readme.split(`| \`${k}\` |`).length === 3), drift.map(([k]) => k).join(", "));
+
+  const Q = tmp("bt-preset-");
+  execFileSync("git", ["init", "-q"], { cwd: Q });
+  const r = node(join(ROOT, "scripts/belltower-init.mjs"), [Q, "--preset", "minimal"]);
+  assert("init --preset minimal 退出 0", r.status === 0, r.stdout + r.stderr);
+  const skills = ["plan", "product", "dev", "data", "ops", "biz", "meta", "test"].filter((b) => existsSync(join(Q, `.claude/skills/tower-${b}/SKILL.md`)));
+  assert("init --preset minimal:只装 dev、meta 两个板块的 SKILL.md", skills.join() === "dev,meta", skills.join());
+  const cfg = JSON.parse(readFileSync(join(Q, ".claude/belltower.json"), "utf8"));
+  assert("init --preset minimal:belltower.json 的 boards / ranges 只留选中的",
+    cfg.boards.join() === "meta,dev" && Object.keys(cfg.ranges).join() === "meta,dev", JSON.stringify(cfg.boards) + JSON.stringify(cfg.ranges));
+  const md = readFileSync(join(Q, "CLAUDE.md"), "utf8");
+  assert("init --preset minimal:CLAUDE.md 路由表删了没选的行、「塔」一格填了开塔时机",
+    !md.includes("`tower-plan` |") && /`tower-dev` \| 现在开 \|/.test(md), md.split("\n").filter((l) => l.includes("`tower-")).join(" | "));
+  const pool = readFileSync(join(Q, "docs/session-pool.md"), "utf8");
+  assert("init --preset minimal:活表只留选中板块的行",
+    /^\| dev \| `tower-dev`/m.test(pool) && !/^\| plan \| `tower-plan`/m.test(pool));
+  assert("init --preset minimal:lock 记下预设", JSON.parse(readFileSync(join(Q, ".claude/belltower.lock.json"), "utf8")).preset === "minimal");
+  const t = node("scripts/test-hooks.mjs", [], Q);
+  const c = counts(t.stdout);
+  assert("init --preset minimal:装好的项目里框架自测全绿", t.status === 0 && c && c[1] === 0, t.stdout.split("\n").filter((l) => /FAIL/.test(l)).join(" | "));
+  const sy = node(join(Q, "scripts/belltower-sync.mjs"), ["--source", ROOT], Q);
+  assert("sync:没开的板块不算「缺起步文件」", sy.status === 0 && !/tower-plan/.test(sy.stdout), sy.stdout);
+  const bad = node(join(ROOT, "scripts/belltower-init.mjs"), [tmp("bt-preset-"), "--preset", "nope"]);
+  assert("init --preset 给了不存在的预设 → 退出 2、列出可选的", bad.status === 2 && /minimal/.test(bad.stderr), bad.stderr);
 }
 
 // ── 3. sync ─────────────────────────────────────────────────────────────

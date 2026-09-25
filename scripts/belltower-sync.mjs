@@ -40,7 +40,12 @@ try {
     if (!existsSync(d)) added.push(e);
     else if (!readFileSync(s).equals(readFileSync(d))) changed.push(e);
   }
-  const missingInit = man.init.filter((e) => !existsSync(e.dst)).map((e) => e.dst);
+  // 项目没开的板块(不在 belltower.json 的 boards 里),它的 SKILL.md 缺着是本来就没装,不算缺
+  let boards = null;
+  try { boards = JSON.parse(readFileSync(".claude/belltower.json", "utf8")).boards; } catch {}
+  const unused = (dst) => { const b = dst.match(/^\.claude\/skills\/tower-([a-z0-9-]+)\/SKILL\.md$/)?.[1];
+    return Array.isArray(boards) && b && !boards.includes(b); };
+  const missingInit = man.init.filter((e) => !existsSync(e.dst) && !unused(e.dst)).map((e) => e.dst);
 
   console.log(`belltower ${lock.version ?? "(未知)"} → ${man.version}(${isDir ? source : `${source}@${ref}`})`);
   for (const e of added) console.log(`  + ${e.dst}`);

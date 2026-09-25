@@ -14,7 +14,7 @@
 | 起得来吗 | ✅ `PENDING` → 14 秒 `RUNNING` |
 | 父子关系 | ✅ `parent_session_id` 指回派发塔 |
 | 环境 | ✅ 不传 `environment_id` 就继承派发塔的 |
-| 仓库 | ✅ 不传 `source_url` 也拿得到;但 `sources` 字段**过一两分钟才填上**,别拿它当「有没有仓库」的判据 |
+| 仓库 | ✅ 不传 `source_url` 也拿得到;但 `sources` 字段**过一两分钟才填上**,别拿它当「有没有仓库」的判据。**照样要传 `source_url` + `source_revision: "main"`**,见 §4 |
 | 权限 | ✅ `permission_mode` 继承(`auto`) |
 | 全程 | **5 分钟**:读仓库 → 读 `CLAUDE.md` → 改文件 → 推分支 → 开 PR |
 | 花费 | 约 1.2 万 output token,几美元级 |
@@ -107,12 +107,17 @@
 
 ```
 mcp__Claude_Code_Remote__create_session
-  title:  "Qnn · 一句话标题"
-  tags:   ["worker", "Qnn", "<板块>"]
-  prompt: <任务书全文>
+  title:           "Qnn · 一句话标题"
+  tags:            ["worker", "Qnn", "<板块>"]
+  source_url:      <本仓库的 https 地址>
+  source_revision: "main"
+  prompt:          <任务书全文>
 ```
 
-`environment_id` / `source_url` / `permission_mode` **都不用传**,继承派发塔的。
+**`source_url` 和 `source_revision` 两个一起传。** 只传 `source_url`、不传 `source_revision`,会话照样拿得到仓库,
+但在桌面 App 侧栏里落进「Other」,不进项目那一组,用户找不到 [实测✅ 2026-09-26]。
+两个都不传(靠继承)会落在哪组 [未实测],所以别赌,都写上。
+`environment_id` / `permission_mode` 不用传,继承派发塔的。
 
 ## 5. 任务书模板(照抄改)
 

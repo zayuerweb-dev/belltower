@@ -2,6 +2,32 @@
 
 格式参照 [Keep a Changelog](https://keepachangelog.com/),版本号遵循语义化版本。
 
+## [0.2.0] — 2026-09-25
+
+### 新增
+- **塔预设**:`belltower-init.mjs --preset <预设>` 按项目类型只装用得到的板块。一共四种:
+  `web-product`(八个全开)· `web-app` · `devtool` · `minimal`,定义在 `presets.json`。
+  选了预设之后:
+  - 没选的板块不装 SKILL.md;
+  - 新装的 `belltower.json` 只留选中的 `boards` / `ranges`;
+  - 新装的 `CLAUDE.md` 路由表删掉没选的行,「塔」那一格填上开塔时机;
+  - 新装的活表只留选中板块的行。
+  - 项目里已有的文件不碰。
+  - `--preset` 不给值,就列出所有预设。
+- `belltower-sync.mjs`:没开的板块(不在 `boards` 里),它的 SKILL.md 不再报「缺起步文件」。
+
+### 文档
+- README 重写:加了「为什么做这个」「八个塔」「预设」「上下文经济」几节。上下文经济一节写明哪些实测过、哪些没量过。
+
+### 修正
+- `create_session` 开塔、派工人时,`source_url` 和 `source_revision: "main"` 一定要一起传。只传前者,会话能拿到仓库,
+  但在桌面 App 侧栏里落进「Other」,不进项目组。这条已改进 `dispatch.md` §3/§4(派工人模板原来写的是「不用传」)、
+  `tower.md` / `routines.md` 的每周重开、活表模板和 `platform-facts.md` §4.1。
+
+### 测试
+- 加了预设的测试:每个预设都含 meta,每个板块都写了开塔时机;`--preset minimal` 实装一遍,只装选中的板块,装好后框架自测全绿;
+  sync 不把没开的板块报成缺;给了不存在的预设会退出 2;README 的预设表要跟 `presets.json` 对得上。
+
 ## [0.1.1] — 2026-09-25
 
 ### 文档

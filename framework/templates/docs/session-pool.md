@@ -29,7 +29,8 @@
 板块=plan 任务=常驻讨论台,按 .claude/skills/tower-meta/references/tower.md 开局
 ```
 
-> 由 meta 代开(`create_session`)时:`title` = 塔名,`tags: ["tower", <板块>]`,**不带 `worker`**
+> 由 meta 代开(`create_session`)时:`source_url` = 本仓库、**`source_revision: "main"` 必传**(不传的话塔在桌面 App 侧栏里落进「Other」,
+> 不进项目组),`title` = 塔名,`tags: ["tower", <板块>]`,**不带 `worker`**
 > (每日清理的第一条判据就认这个标),`prompt` = 上面那行口令。
 
 ---

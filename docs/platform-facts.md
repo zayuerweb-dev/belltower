@@ -138,9 +138,14 @@ fire_trigger   { trigger_id: "<上一步返回的 id>" }
 | 父子关系 | `parent_session_id` 指回派发的会话 |
 | 环境 | 不传 `environment_id` 就继承派发会话的 |
 | 仓库 | 不传 `source_url` 也拿得到;但 `sources` 字段**过一两分钟才填上**,别拿它当「有没有仓库」的判据 |
+| 侧栏分组 | **要 `source_url` + `source_revision` 一起传**,见下 |
 | 权限 | `permission_mode` 继承 |
 | 小单全程 | 约 5 分钟:读仓库 → 读 `CLAUDE.md` → 改文件 → 推分支 → 开 PR |
 
+- **只传 `source_url`、不传 `source_revision`:会话拿得到仓库,但在桌面 App 侧栏里落进「Other」,不进项目组** [实测✅ 2026-09-26]。
+  对照:进了项目组的会话,记录里 `sources[].git_repository` 带 `"revision":"main"`,落进 Other 的没有,其余字段一样;
+  同样的写法加上 `source_revision: "main"` 之后,就进了项目组。所以开塔、派工人都**两个一起传**。
+  两个都不传、全靠继承的会话落在哪组 [未实测]。
 - `create_session` **设不了**用户手动给会话调的档位(推理强度之类)—— 重开的会话会丢这些 [实测✅ 2026-09-25]。
 - harness 给每个会话一行 `Claude-Session:` 署名链接;派工人时把**自己那行**抄进任务书,工人就照抄,提交全指向派它的会话 [实测✅ 2026-09-10]。任务书里别放具体链接。
 

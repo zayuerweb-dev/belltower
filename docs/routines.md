@@ -122,7 +122,7 @@ journal 记一行,ledger-push。
    写进台账(journal 一行 + 该进 BACKLOG 的进 BACKLOG);该推的推、该合的合。最后一行只写 `HANDOFF-READY`。」
 2. 排一个 20 分钟回查(`send_later`,打回 meta)。回查时逐个 `get_session`:`IDLE` 且摘要 / 最后一行有 `HANDOFF-READY` → 往下;没有 → 这周跳过,报给用户。
 3. **归档旧会话** `archive_session` —— 不删除,转录要能回查。
-4. **开新会话** `create_session`:`source_url` 本仓库、`source_revision: main`、`title` = 塔名、
+4. **开新会话** `create_session`:`source_url` 本仓库、`source_revision: main`(**必传**,漏了新塔在侧栏落进「Other」)、`title` = 塔名、
    `tags: ["tower", <塔名>]`(**不带 `worker`**;旧会话上平台自动加的 `config:*` 标签不用照搬);`prompt` = 开塔口令一行 + 「上一任的接手须知在 journal 里本塔最新一条」。
 5. **更新活表**:塔表那一行换成新会话 ID,`ledger-push`。
 6. **处理绑在旧会话上的例程**:`list_triggers` 带 `include_completed: true` 全翻(不带会漏跑完的一次性回查;

@@ -1,0 +1,52 @@
+{
+  "_comment": "塔预设:按项目类型预先选一组板块,每个板块写上什么时候开塔。belltower-init --preset <键> 读这里:只装选中板块的 SKILL.md,belltower.json 的 boards / ranges 只留选中的,CLAUDE.md 板块路由表里没选的行删掉、「塔」那一格填成 open 里的话。meta 每个预设都得有(框架中枢,协议文档挂在它下面)。README 里的预设表由 scripts/test.mjs 对着这里核。",
+  "presets": {
+    "web-product": {
+      "name": "网页产品(要卖)",
+      "en": "Web product you sell",
+      "boards": ["plan", "product", "biz", "meta", "dev", "data", "test", "ops"],
+      "open": {
+        "plan": "现在开",
+        "product": "现在开",
+        "biz": "现在开",
+        "meta": "现在开",
+        "dev": "规格评审过了再开",
+        "data": "跟 dev 一起开(拿真实样本验)",
+        "test": "代码量上来后从 dev 拆出来开(验收不让写代码的自己验)",
+        "ops": "第一次上线前开,之前 dev 兼"
+      }
+    },
+    "web-app": {
+      "name": "网页应用(自用)",
+      "en": "Web app for your own use",
+      "boards": ["product", "meta", "dev", "test", "ops"],
+      "open": {
+        "product": "现在开",
+        "meta": "现在开",
+        "dev": "规格定了就开",
+        "test": "dev 开始交东西时开",
+        "ops": "第一次上线前开,之前 dev 兼"
+      }
+    },
+    "devtool": {
+      "name": "开发工具或库",
+      "en": "Developer tool or library",
+      "boards": ["plan", "meta", "dev", "test"],
+      "open": {
+        "plan": "现在开(路线 + 发版)",
+        "meta": "现在开",
+        "dev": "现在开",
+        "test": "dev 开始交东西时开"
+      }
+    },
+    "minimal": {
+      "name": "最小",
+      "en": "Minimal",
+      "boards": ["meta", "dev"],
+      "open": {
+        "meta": "现在开",
+        "dev": "现在开"
+      }
+    }
+  }
+}
