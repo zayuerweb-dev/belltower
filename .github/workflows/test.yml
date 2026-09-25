@@ -23,3 +23,27 @@ jobs:
         run: node scripts/test.mjs
       - name: 泄漏扫描
         run: node scripts/scan-public.mjs
+
+  # 发版:main 上测试全绿后,这个版本号还没有 tag、CHANGELOG 那一节写了日期 → 自动打 v<版本号>。
+  # 由 CI 打而不是会话自己推:云会话经平台 git 代理推 tag 会被 403 拒(docs/platform-facts.md §5.6)。
+  tag:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: 按版本号打 tag
+        run: |
+          ver=$(node -p 'require("./belltower.manifest.json").version')
+          tag="v$ver"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "$tag 已经有了,不用打"; exit 0
+          fi
+          if ! grep -qF "## [$ver] — 20" CHANGELOG.md; then
+            echo "::error::版本号是 $ver,但 CHANGELOG 里 [$ver] 那一节还没写日期 —— 写好再推"; exit 1
+          fi
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+          echo "已打 $tag"
