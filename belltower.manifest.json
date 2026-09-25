@@ -1,6 +1,6 @@
 {
   "name": "belltower",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "upstream": "https://github.com/zayuerweb-dev/belltower",
   "_comment": "framework = 框架文件,belltower-sync 会覆盖更新;init = 起步模板,只在 belltower-init 时拷一次、之后归项目,sync 永远不碰。路径:src 相对本仓库根,dst 相对项目根。",
   "framework": [
