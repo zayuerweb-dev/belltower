@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 在项目里把框架文件更新到 belltower 的某个版本。**只碰清单里的 framework 文件**,
+// 在项目里把框架文件更新到 belltower 的某个版本。**只碰清单里的 framework 文件**(`.claude/settings.json` 合并不覆盖,见下),
 // 项目自己的东西(CLAUDE.md、belltower.json、四件台账、各板块 SKILL.md、冻结清单)永远不碰。
 //
 // 用法(在项目根跑):
@@ -32,13 +32,43 @@ if (!isDir) {
   SRC = tmp;
 }
 
+// `.claude/settings.json` 不整份覆盖,而是合并:项目往里加的 hook、加的键,整份覆盖会被静默删掉
+// (装了框架的项目实际丢过一次,靠项目自己的测试才发现)。
+//   - 框架定义的键:用框架的值(跟以前一样,框架能改默认);
+//   - hooks:框架的全要,项目的 hook 只要命令不在框架同一事件里,就原样(连 matcher)接在后面;
+//   - 项目独有的键(permissions、enabledPlugins……):原样保留。
+const SETTINGS = ".claude/settings.json";
+function mergeSettings(fw, proj) {
+  const out = { ...proj, ...structuredClone(fw) };
+  let kept = Object.keys(proj).filter((k) => !(k in fw)).length;
+  for (const [ev, groups] of Object.entries(proj.hooks ?? {})) {
+    if (!Array.isArray(groups)) continue;
+    const fwCmds = new Set((fw.hooks?.[ev] ?? []).flatMap((g) => (g.hooks ?? []).map((h) => h.command)));
+    for (const g of groups) {
+      const own = (g.hooks ?? []).filter((h) => !fwCmds.has(h.command));
+      if (!own.length) continue;
+      out.hooks ??= {};
+      (out.hooks[ev] ??= []).push({ ...g, hooks: own });
+      kept += own.length;
+    }
+  }
+  return { text: JSON.stringify(out, null, 2) + "\n", kept };
+}
+
 try {
   const man = JSON.parse(readFileSync(join(SRC, "belltower.manifest.json"), "utf8"));
   const changed = [], added = [];
+  const merged = {};   // dst → 合并后的内容
   for (const e of man.framework) {
     const s = join(SRC, e.src), d = e.dst;
-    if (!existsSync(d)) added.push(e);
-    else if (!readFileSync(s).equals(readFileSync(d))) changed.push(e);
+    if (!existsSync(d)) { added.push(e); continue; }
+    if (d === SETTINGS) {
+      let m = null;
+      try { m = mergeSettings(JSON.parse(readFileSync(s, "utf8")), JSON.parse(readFileSync(d, "utf8"))); } catch {}
+      if (m) { if (m.text !== readFileSync(d, "utf8")) { merged[d] = m; changed.push(e); } continue; }
+      console.log(`  (项目的 ${d} 不是合法 JSON,只能整份换成框架版;项目自己加的东西请事后补回)`);
+    }
+    if (!readFileSync(s).equals(readFileSync(d))) changed.push(e);
   }
   // 项目没开的板块(不在 belltower.json 的 boards 里),它的 SKILL.md 缺着是本来就没装,不算缺
   let boards = null;
@@ -49,13 +79,17 @@ try {
 
   console.log(`belltower ${lock.version ?? "(未知)"} → ${man.version}(${isDir ? source : `${source}@${ref}`})`);
   for (const e of added) console.log(`  + ${e.dst}`);
-  for (const e of changed) console.log(`  ~ ${e.dst}`);
+  for (const e of changed) console.log(`  ~ ${e.dst}${merged[e.dst] ? `(合并:框架部分更新,保留项目自己的 ${merged[e.dst].kept} 项)` : ""}`);
   if (!added.length && !changed.length) console.log("  框架文件都已一致。");
   if (missingInit.length) console.log(`  (项目缺这些起步文件,sync 不补;要补用 belltower-init:${missingInit.join("、")})`);
 
   if (!apply) { if (added.length || changed.length) console.log("\n预演,没写任何东西。确认后加 --apply。"); }
   else {
-    for (const e of [...added, ...changed]) { mkdirSync(dirname(e.dst), { recursive: true }); copyFileSync(join(SRC, e.src), e.dst); }
+    for (const e of [...added, ...changed]) {
+      mkdirSync(dirname(e.dst), { recursive: true });
+      if (merged[e.dst]) writeFileSync(e.dst, merged[e.dst].text);
+      else copyFileSync(join(SRC, e.src), e.dst);
+    }
     mkdirSync(".claude", { recursive: true });
     writeFileSync(".claude/belltower.lock.json", JSON.stringify({ version: man.version, upstream: lock.upstream ?? (isDir ? undefined : source), ref: isDir ? undefined : ref }, null, 2) + "\n");
     console.log(`\n已写 ${added.length + changed.length} 个文件。下一步:node scripts/test-hooks.mjs,绿了再提交。`);

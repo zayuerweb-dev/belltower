@@ -75,7 +75,7 @@ function gitSandbox() {
   const origin = join(d, ".origin.git");
   execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
   gitq(d, "init", "-q", "-b", "main");
-  gitq(d, "config", "user.email", "t@t"); gitq(d, "config", "user.name", "t");
+  gitq(d, "config", "user.email", "t@example.com"); gitq(d, "config", "user.name", "t");
   gitq(d, "remote", "add", "origin", origin);
   return d;
 }
@@ -364,6 +364,8 @@ assert("绿:授权词出现在非台账文件不拦",
   commitAll(d, "初版");
   writeFileSync(join(d, "docs/BACKLOG.md"), "x\ny\n");
   commitAll(d, "某个功能 (#12)");
+  writeFileSync(join(d, "docs/BACKLOG.md"), "x\ny\nz\n");
+  commitAll(d, "Merge pull request #34 from someone/topic");  // scan-public:ok(测试夹具:普通合并的标题)
   gitq(d, "push", "-q", "origin", "main");
   const ed = (sid, oldS, newS) => runIn(d, "guard-edit.mjs", {
     session_id: sid, tool_name: "Edit",
@@ -375,6 +377,10 @@ assert("绿:授权词出现在非台账文件不拦",
     allowed(ed("prm1", "x\n", "x\nPR #99999 已合\n")));  // scan-public:ok(测试夹具)
   assert("绿:写「PR #12 已合」而 main 上确实有它 → 放行(证明它查的是真历史)",  // scan-public:ok(测试夹具)
     allowed(ed("prm2", "x\n", "x\nPR #12 已合\n")));  // scan-public:ok(测试夹具)
+  assert("绿:写「PR #34 已合」而 main 上是普通合并「Merge pull request #34 from …」→ 放行",  // scan-public:ok(测试夹具)
+    allowed(ed("prm4", "x\n", "x\nPR #34 已合\n")));  // scan-public:ok(测试夹具)
+  assert("红:写「PR #3 已合」,main 上只有 #34 / #12 → 不许把前缀当成命中",  // scan-public:ok(测试夹具)
+    denied(ed("prm5", "x\n", "x\nPR #3 已合\n")));  // scan-public:ok(测试夹具)
   assert("绿:原文里本来就写着的不算新声称",
     allowed(ed("prm3", "PR #99999 已合\n", "PR #99999 已合\n别的\n")));  // scan-public:ok(测试夹具)
 }
@@ -565,7 +571,7 @@ const start = (dir, sid = "") => runIn(dir, "session-start.mjs", {}, { CLAUDE_CO
   for (const b of ["plan", "product", "dev", "data", "ops", "biz", "meta", "test"])
     assert(`session-start 默认板块清单含 ${b}`,
       new RegExp(`板块=\\?\\([^)]*\\b${b}\\b[^)]*\\)`).test(r.out), r.out.split("\n").find((l) => /板块=/.test(l)));
-  assert("session-start 默认提醒敏感数据要确认", /铁律1/.test(r.out));
+  assert("session-start 默认提醒敏感数据要确认", /敏感数据默认不进本仓库/.test(r.out));
   assert("session-start 没配置时仓库名 = 目录名", r.out.split("\n")[1]?.startsWith("仓库:tower-hook-"), r.out.split("\n")[1]);
 }
 {
@@ -643,6 +649,18 @@ for (const h of ["guard-bash.mjs", "guard-edit.mjs", "guard-stop.mjs"]) {
 }
 
 for (const d of SANDBOXES) rmSync(d, { recursive: true, force: true });
+
+// ── 报文与台账日期:不写死铁律编号、不用 UTC 日期 ───────────────────────
+// 项目常在框架铁律前插自己的规矩,编号就对不上;gate-log 的日期要按项目时区(belltower.json 的 timezone)。
+{
+  const hooksDir = ".claude/hooks";   // 跟上面跑 hook 一样,以项目根为当前目录
+  const files = ["guard-bash.mjs", "guard-edit.mjs", "guard-mcp.mjs", "guard-stop.mjs", "session-start.mjs", "lib/config.mjs"];
+  const code = (f) => readFileSync(join(hooksDir, f), "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  const numbered = files.filter((f) => /铁律\d/.test(code(f)));
+  assert("闸门报文按规矩名引用铁律,不写编号", !numbered.length, numbered.join(", "));
+  const utc = files.filter((f) => /toISOString\(\)\.slice\(0, ?10\)/.test(code(f)));
+  assert("闸门写的日期走项目时区(不用 UTC 的 toISOString 截日期)", !utc.length, utc.join(", "));
+}
 
 console.log(results.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);

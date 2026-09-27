@@ -31,7 +31,7 @@ function sandbox(protect) {
   const origin = join(box, "origin.git"), work = join(box, "work");
   execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
   execFileSync("git", ["init", "-q", "-b", "main", work]);
-  g(work, "config", "user.email", "t@t"); g(work, "config", "user.name", "t");
+  g(work, "config", "user.email", "t@example.com"); g(work, "config", "user.name", "t");
   mkdirSync(join(work, "docs"), { recursive: true });
   mkdirSync(join(work, "scripts"), { recursive: true });
   mkdirSync(join(work, ".claude/.session-state"), { recursive: true });

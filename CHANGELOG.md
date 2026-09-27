@@ -19,12 +19,31 @@
 ### 文档
 - README 重写:加了「为什么做这个」「八个塔」「预设」「上下文经济」几节。上下文经济一节写明哪些实测过、哪些没量过。
 
+### 升级提示(从 0.1.x 升上来,务必看)
+- 项目里现有的 `belltower-sync.mjs` 还是旧的:它会**整份覆盖** `.claude/settings.json`,把项目自己加的 hook 冲掉。
+  所以这一次别跑项目里那份。先把 belltower 克隆到项目外面,然后在项目根目录跑新版的脚本:
+  `node <belltower 克隆>/scripts/belltower-sync.mjs --source <belltower 克隆>`,先预演看一遍,再加 `--apply`。
+  这次之后,项目里的就是新版,以后照常跑。
+
 ### 修正
+- `belltower-sync` 不再整份覆盖 `.claude/settings.json`,改成合并:
+  - 框架定义的键用框架的值;
+  - hooks 里框架的全要,项目自己加的 hook(命令不在框架同一事件里的)连 matcher 原样接在后面;
+  - 项目独有的键(`permissions` 之类)原样保留。
+- 闸门6(写「PR 已合」前查 `main`)也认普通合并留下的「Merge pull request #n from …」,原来只认 squash 的「(#n)」,
+  用普通合并的项目每次必误拦一次。编号按整个匹配,#3 不会被 #34 冒充。
+- `gate-log` 的日期改按项目时区(`belltower.json` 的 `timezone`),原来用 UTC,晚上记的会跑到第二天。
+- 闸门报文里引用铁律,改成写规矩的名字,不再写编号:铁律1 →「敏感数据默认不进本仓库」,铁律4 →「说完成前贴证据」。
+  `sensitiveReminder` 的默认值也一样。项目常在框架铁律前面插自己的规矩,编号就对不上了。
+- 沙箱测试的 git 邮箱从 `t@t` 改成 `t@example.com`,免得撞上项目自己的「提交邮箱格式」闸门。
 - `create_session` 开塔、派工人时,`source_url` 和 `source_revision: "main"` 一定要一起传。只传前者,会话能拿到仓库,
   但在桌面 App 侧栏里落进「Other」,不进项目组。这条已改进 `dispatch.md` §3/§4(派工人模板原来写的是「不用传」)、
   `tower.md` / `routines.md` 的每周重开、活表模板和 `platform-facts.md` §4.1。
 
 ### 测试
+- 加了 sync 合并 `settings.json` 的测试:项目的 hook 和键留着,框架的 hook 补回来、不重复。
+- 加了闸门6 认普通合并、编号不被前缀冒充的测试;另外两条静态检查:闸门报文里不写铁律编号,日期不用 UTC 截取。
+- 以上每条都故意改坏一次,确认对应测试会红。
 - 加了预设的测试:每个预设都含 meta,每个板块都写了开塔时机;`--preset minimal` 实装一遍,只装选中的板块,装好后框架自测全绿;
   sync 不把没开的板块报成缺;给了不存在的预设会退出 2;README 的预设表要跟 `presets.json` 对得上。
 

@@ -12,7 +12,7 @@ export const DEFAULTS = Object.freeze({
   // 各板块的任务号段(立号用;开局认出塔身份时打出来)。没列的板块 = 不提示号段。
   ranges: { plan: "Q1xx", product: "Q2xx", dev: "Q3xx", data: "Q4xx", ops: "Q5xx", biz: "Q6xx", meta: "Q7xx", test: "Q8xx" },
   timezone: "America/New_York",
-  sensitiveReminder: "敏感数据默认不进本仓库;每要用一份,先问用户(铁律1)。",
+  sensitiveReminder: "敏感数据默认不进本仓库;每要用一份,先问用户(铁律「敏感数据默认不进本仓库」)。",
   // 敏感数据路径(铁律1 的默认值)。bash = 拷贝命令里出现就拦;edit = 写进仓库的相对路径命中就拦。
   // 项目按自己的数据改;设成空字符串 = 关掉这道闸。
   sensitivePaths: {

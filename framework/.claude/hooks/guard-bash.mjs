@@ -8,6 +8,7 @@
 import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { config, regex } from "./lib/config.mjs";
+import { ymd } from "./lib/now.mjs";
 
 let input;
 try { input = JSON.parse(readFileSync(0, "utf8")); } catch { process.exit(0); }
@@ -53,13 +54,13 @@ const logGate = (gate, why) => {
   if (process.env.CLAUDE_HOOK_TEST === "1") return;
   try {
     mkdirSync("docs", { recursive: true });
-    const d = new Date().toISOString().slice(0, 10);
+    const d = ymd();   // 项目时区的日期(belltower.json 的 timezone);原来用 UTC,晚上记的账会跑到第二天
     appendFileSync("docs/gate-log.md",
       `| ${d} | ${gate} | \`${cmd.slice(0, 100).replace(/\n/g, " ").replace(/\|/g, "\\|")}\` | 待判 | ${why} |\n`);
   } catch {}
 };
 
-// ── 闸门1:敏感数据不许拷进本仓库(铁律1)──────────────────────────
+// ── 闸门1:敏感数据不许拷进本仓库(铁律「敏感数据默认不进本仓库」)──────────────────────────
 // 确认闸不是禁令 —— 要用先问用户。路径模式来自配置 sensitivePaths.bash(空 = 关掉)。
 // 出处(2026-09-09):一整个外部数据目录被 git init 后推上 GitHub,里面是别人的真实名单和地址,
 //   没人问过。所以默认不进,每一份都要用户点头。
@@ -67,7 +68,7 @@ const SENSITIVE = regex(config().sensitivePaths.bash);
 const COPY = /(?<![\w-])(cp|copy|move|mv|robocopy|Copy-Item|Move-Item|xcopy)(?![\w-])/i;
 if (SENSITIVE && COPY.test(scan) && SENSITIVE.test(scan)) {
   logGate("闸1 敏感数据入库", "拷贝动词 + 敏感数据路径");
-  deny("闸门1:这条命令看起来要把**敏感数据**拷进本仓库(铁律1)。\n" +
+  deny("闸门1:这条命令看起来要把**敏感数据**拷进本仓库(铁律「敏感数据默认不进本仓库」)。\n" +
        "默认不进。真要用:先跟用户确认「取哪一份 / 脱敏到什么程度 / 进不进版本库」。\n" +
        "模式在 .claude/belltower.json 的 sensitivePaths.bash;误伤记 docs/gate-log.md。");
 }
@@ -82,7 +83,7 @@ if (/\bgit\s+add\b[^\n|;&]*\s(-f|--force)\b/.test(scan)) {
 for (const m of scan.matchAll(/\bgit\s+add\b([^\n;&|]*)/g)) {
   if (SENSITIVE && SENSITIVE.test(m[1] ?? "")) {
     logGate("闸2 git-add-敏感数据", "git add 参数里点名敏感数据");
-    deny("闸门2:这条 `git add` 的参数里点名了敏感数据(铁律1)。先拿确认。");
+    deny("闸门2:这条 `git add` 的参数里点名了敏感数据(铁律「敏感数据默认不进本仓库」)。先拿确认。");
   }
 }
 

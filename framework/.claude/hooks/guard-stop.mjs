@@ -46,7 +46,7 @@ if (EDITED_CODE.test(flags) && CLAIMS_DONE.test(lastText) &&
     !HAS_EVIDENCE.test(lastText) && !/^testrun$/m.test(flags) &&
     !flags.includes("gatea-reminded")) {
   remember("gatea-reminded");
-  block("闸门6:本会话改过源文件,而这条收尾说了「完成」却没有回归证据(铁律4)。\n" +
+  block("闸门6:本会话改过源文件,而这条收尾说了「完成」却没有回归证据(铁律「说完成前贴证据」)。\n" +
         "先自己重跑测试,把实际输出贴出来;\n" +
         "或者用户已经说「就这样」,那就直接收尾。");
 }

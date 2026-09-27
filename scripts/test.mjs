@@ -109,7 +109,20 @@ execFileSync("git", ["init", "-q"], { cwd: P });
 
   rmSync(join(P, ".claude/hooks/guard-bash.mjs"));
   rmSync(join(P, "docs/journal.md"));
+  // 项目往 settings.json 里加了自己的 hook 和键;框架那边的 hook 又被改旧了一处
+  const st = JSON.parse(readFileSync(join(P, ".claude/settings.json"), "utf8"));
+  st.hooks.PreToolUse.push({ matcher: "Bash", hooks: [{ type: "command", command: "node scripts/project-own-hook.mjs" }] });
+  st.permissions = { allow: ["Bash(npm test)"] };
+  delete st.hooks.Stop;
+  writeFileSync(join(P, ".claude/settings.json"), JSON.stringify(st, null, 2) + "\n");
   const ap = sync("--apply");
+  const st2 = JSON.parse(readFileSync(join(P, ".claude/settings.json"), "utf8"));
+  const cmds = (ev) => (st2.hooks[ev] ?? []).flatMap((g) => g.hooks.map((h) => h.command));
+  assert("sync --apply:settings.json 合并,项目自己的 hook 和键留着",
+    cmds("PreToolUse").includes("node scripts/project-own-hook.mjs") && st2.permissions?.allow?.[0] === "Bash(npm test)", JSON.stringify(st2).slice(0, 300));
+  assert("sync --apply:settings.json 里框架的 hook 补回来、不重复",
+    cmds("Stop").includes("node .claude/hooks/guard-stop.mjs") &&
+    cmds("PreToolUse").filter((c) => c === "node .claude/hooks/guard-bash.mjs").length === 1, JSON.stringify(st2.hooks));
   assert("sync --apply:改过的框架文件恢复成框架版",
     ap.status === 0 && readFileSync(join(P, ".claude/hooks/now.mjs"), "utf8") === readFileSync(join(ROOT, "framework/.claude/hooks/now.mjs"), "utf8"), ap.stdout + ap.stderr);
   assert("sync --apply:缺的框架文件补上", existsSync(join(P, ".claude/hooks/guard-bash.mjs")));

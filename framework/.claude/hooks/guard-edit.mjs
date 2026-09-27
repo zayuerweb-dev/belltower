@@ -52,7 +52,7 @@ if (/(sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})/
 // 路径模式来自配置 sensitivePaths.edit(空 = 关掉)。
 const SENSITIVE = regex(config().sensitivePaths.edit);
 if (rel && SENSITIVE && SENSITIVE.test(rel))
-  deny(`闸门3:${rel} 看起来是**敏感数据**,不是本项目自己的东西(铁律1)。\n` +
+  deny(`闸门3:${rel} 看起来是**敏感数据**,不是本项目自己的东西(铁律「敏感数据默认不进本仓库」)。\n` +
        `默认不进本仓库。真要用这一份:先跟用户确认「取哪一份 / 脱敏到什么程度 / 进不进版本库」,\n` +
        `拿到确认后改 .gitignore 和 .claude/belltower.json 的规则,不要绕过这道闸。`);
 
@@ -122,8 +122,10 @@ if (LEDGER_MD.test(rel) && !flags.includes("authword-reminded")) {
 // 出处(2026-09-10):工人三次把「我开了 PR」写成「已经合了」;
 //   配方 §6 写着「收活时塔自己查 PR,不认工人自述」,而同一晚三个塔收活,
 //   **两个没查**,都照抄了工人的「merged」。文字规矩治不了,所以上闸。
-// 判据:台账里写 PR #n 已合,而 origin/main 的历史里找不到 (#n)。
-// ★ 软闸:合并方式不同可能不留 (#n) 后缀,硬拦会误伤;但把实查结果摆出来。
+// 判据:台账里写 PR #n 已合,而 origin/main 的历史里既找不到 squash 留的「… (#n)」,
+//   也找不到普通合并留的「Merge pull request #n from …」。
+//   (第一版只认 (#n),用普通合并的项目每次必误拦一次 —— 是装了框架的项目报上来的。)
+// ★ 软闸:还有别的合并方式(rebase)不留编号,硬拦会误伤;但把实查结果摆出来。
 if (LEDGER_MD.test(rel) && !flags.includes("prmerged-reminded")) {
   const after = afterText(), before = beforeText();
   const seen = new Set([...String(before).matchAll(/#(\d+)/g)].map((m) => m[1]));
@@ -135,15 +137,15 @@ if (LEDGER_MD.test(rel) && !flags.includes("prmerged-reminded")) {
     try {
       git("fetch", "-q", "origin", "main");
       for (const n of [...new Set(claims)])
-        if (!git("log", "origin/main", "--oneline", `--grep=(#${n})`, "-5").trim()) missing.push(n);
+        if (!git("log", "origin/main", "--oneline", "-E", `--grep=\\(#${n}\\)|^Merge pull request #${n} `, "-5").trim()) missing.push(n);
     } catch { missing = []; }           // 查不了就放行(fail-open),闸门瘫了不该让工作瘫
     if (missing.length) {
       remember("prmerged-reminded");
       deny(`闸门6:你写了 PR ${missing.map((n) => "#" + n).join(" / ")} **已合**,` +
            `但我在 origin/main 的历史里找不到它:\n` +
-           `    git log origin/main --oneline --grep='(#${missing[0]})'   → 没有输出\n\n` +
+           `    git log origin/main --oneline -E --grep='\\(#${missing[0]}\\)|^Merge pull request #${missing[0]} '   → 没有输出\n\n` +
            `  工人**三次**把「我开了 PR」写成「已经合了」,塔照抄进了台账。\n` +
-           `  先自己查一遍 GitHub 再写台账;确实合了(或者合并方式没留 (#n) 后缀)就再来一次放行。`);
+           `  先自己查一遍 GitHub 再写台账;确实合了(或者合并方式没留编号,比如 rebase)就再来一次放行。`);
     }
   }
 }
