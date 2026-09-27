@@ -61,7 +61,8 @@ compaction 丢细节无所谓,细节已经在盘上。
 - **main 上了分支保护之后**,直推会被拒。脚本自适应:
   - 打印 `✓ 台账已上 main` → 完事。
   - 打印 `⚠ 台账还没进 main` 并给出一个 `ledger/…` 分支 → **你要开 PR 并合**:
-    `create_pull_request`(base=main,head=那个分支)→ `enable_pr_auto_merge`(CI 绿了自己合)。
+    `create_pull_request`(base=main,head=那个分支)→ `pull_request_read` 读实际状态,能合就合
+    (PR 上真跑 CI 且还没跑完,才用 `enable_pr_auto_merge` 等它绿)。
     PR 报 not mergeable = 别的塔先合了它的台账,**重跑一次 `ledger-push`**,别去手改 PR 分支。
   - 怎么分辨「被规则挡了」和「别的塔抢先推了」:脚本不读 GitHub 的错误文字(措辞会变),
     而是 push 失败后现查 `origin/main` 的 sha 动没动 —— 动了 = 抢跑(自动重试),没动 = 规则挡的(转 PR 模式)。
@@ -121,7 +122,7 @@ compaction 丢细节无所谓,细节已经在盘上。
 
 ## 闸门维护(先硬后调)
 
-实现 = `.claude/hooks/` 五个脚本 + `scripts/test-hooks.mjs`。闸门编号:bash 1–4 · edit 1–6 · mcp 10–11 · stop 6/7/8/9/12。
+实现 = `.claude/hooks/` 五个脚本 + `scripts/test-hooks.mjs`。闸门编号:bash 1–4 · edit 1–6 · mcp 10–11、13 · stop 6/7/8/9/12。
 敏感路径的判据从 `.claude/belltower.json` 的 `sensitivePaths` 读。
 
 - **加闸门**:必须能指到一次真实事故;必须带放行口子(或写明为什么不带);

@@ -259,7 +259,7 @@
 | `.claude/skills/tower-<板块>/SKILL.md` | 每个板块的入职手册 + 顾问 |
 | `.claude/skills/tower-meta/references/tower.md` | 塔协议:开局动作、平台事实、每周深度重开 |
 | `.claude/skills/tower-meta/references/dispatch.md` | 派发配方:立号、任务书模板、收活、归档、回查、转授权 |
-| `.claude/hooks/` | 闸门:bash 1–4、edit 1–6、mcp 10–11、stop 6/7/8/9/12;开局 hook 认身份、现数代码 |
+| `.claude/hooks/` | 闸门:bash 1–4、edit 1–6、mcp 10–11、13、stop 6/7/8/9/12;开局 hook 认身份、现数代码 |
 | `scripts/ledger-push.mjs` | 台账上 `main`(分支保护后自动转 PR 模式) |
 | `scripts/test-hooks.mjs` | 闸门回归 + 变异验证 |
 | `.claude/belltower.json` | 项目配置:显示名、仓库、代码目录、板块清单、时区、敏感路径正则 |

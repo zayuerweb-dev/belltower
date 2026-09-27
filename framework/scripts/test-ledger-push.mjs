@@ -13,7 +13,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, chmodSync,
          readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, dirname as dirname0 } from "node:path";
 
 const SCRIPT = resolve("scripts/ledger-push.mjs");
 const LEDGER = ["journal", "BACKLOG", "session-pool", "gate-log"];
@@ -180,6 +180,58 @@ group("D 夹带", () => {
   check("D 夹带代码:点名了那个越界路径", out.includes("src/"), out.slice(0, 200));
   check("D 夹带代码:台账没被推上去",
     !gd(origin, "show", "main:docs/journal.md").includes("本塔的行"));
+});
+
+// ── G:detached HEAD(云会话开局常见)→ 不许丢台账,人要回原位 ─────────────
+//    第一版拿 `rev-parse --abbrev-ref HEAD` 当分支名,detached 下得到 "HEAD":
+//    取台账文件 = 从临时分支(= origin/main)取 → 本塔改动被静默丢掉;回切 = 原地不动。
+const tmpBranches = (work) => g(work, "branch", "--format=%(refname:short)").split("\n").filter((b) => b.startsWith("_ledger_tmp"));
+const detach = (work) => g(work, "checkout", "-q", "--detach", "HEAD");
+group("G detached 直推", () => {
+  const { origin, work } = sandbox("none");
+  // 让 main 领先本地一笔(别的塔先推了),本地停在 detached HEAD
+  const peer = join(dirname0(work), "peer");
+  execFileSync("git", ["clone", "-q", origin, peer]);
+  g(peer, "config", "user.email", "t@example.com"); g(peer, "config", "user.name", "t");
+  writeFileSync(join(peer, "docs/gate-log.md"), "# gate-log 初版\n别的塔先推的一行\n");
+  g(peer, "commit", "-qam", "别的塔先推"); g(peer, "push", "-q", "origin", "main");
+  detach(work);
+  writeFileSync(join(work, "docs/journal.md"), "# journal 初版\n本塔 detached 下写的行\n");
+  const { out, code } = runAllowFail(work, "G detached");
+  check("G detached:退出码 0", code === 0, `code=${code} ${out.slice(0, 200)}`);
+  check("G detached:本塔那一行真进了 main(没被临时分支的旧文件冲掉)",
+    gd(origin, "show", "main:docs/journal.md").includes("本塔 detached 下写的行"));
+  check("G detached:别的塔先推的那行还在",
+    gd(origin, "show", "main:docs/gate-log.md").includes("别的塔先推的一行"));
+  let sym = null; try { sym = g(work, "symbolic-ref", "-q", "HEAD"); } catch {}
+  check("G detached:人回到原位(还是 detached,不是被留在临时分支上)", sym === null, `HEAD → ${sym}`);
+  check("G detached:原位的工作树里也有本塔那一行",
+    readFileSync(join(work, "docs/journal.md"), "utf8").includes("本塔 detached 下写的行"));
+  check("G detached:临时分支删干净了", tmpBranches(work).length === 0, tmpBranches(work).join(","));
+});
+group("G detached 转 PR", () => {
+  const { origin, work } = sandbox("always");
+  detach(work);
+  writeFileSync(join(work, "docs/journal.md"), "# journal 初版\n本塔 detached 下写的行\n");
+  const { out, code } = runAllowFail(work, "G detached PR");
+  check("G detached + 保护:退出码 0(转 PR 模式)", code === 0, `code=${code} ${out.slice(0, 200)}`);
+  const lb = ledgerBranches(origin);
+  check("G detached + 保护:ledger 分支上有本塔那一行",
+    lb.length === 1 && gd(origin, "show", `${lb[0]}:docs/journal.md`).includes("本塔 detached 下写的行"), lb.join(","));
+  let sym = null; try { sym = g(work, "symbolic-ref", "-q", "HEAD"); } catch {}
+  check("G detached + 保护:人回到原位、临时分支删了", sym === null && tmpBranches(work).length === 0, `HEAD → ${sym}; ${tmpBranches(work)}`);
+});
+
+// ── H:同机另一个工作树正占着旧的临时分支名 → 不许互撞 ─────────────────────
+group("H 并发工作树", () => {
+  const { origin, work } = sandbox("none");
+  const other = join(dirname0(work), "other-wt");
+  g(work, "worktree", "add", "-q", "-b", "_ledger_tmp", other, "main");   // 旧版写死的名字被别的工作树占着
+  writeFileSync(join(work, "docs/journal.md"), "# journal 初版\n本塔的行\n");
+  const { out, code } = runAllowFail(work, "H 并发");
+  check("H 并发:退出码 0(没撞上别人的临时分支)", code === 0, `code=${code} ${out.slice(0, 200)}`);
+  check("H 并发:台账进了 main", gd(origin, "show", "main:docs/journal.md").includes("本塔的行"));
+  check("H 并发:别人那个分支没被删", g(work, "branch", "--list", "_ledger_tmp").includes("_ledger_tmp"));
 });
 
 // ── E:闸门12 端到端 —— 真脚本进 PR 模式,真收尾闸看得见、合掉之后自清理 ────

@@ -85,20 +85,25 @@ const flagsIn = (dir, sid) => {
   catch { return ""; }
 };
 
+// ★ 先钉时钟:hook 在测试模式下认 BELLTOWER_NOW(lib/now.mjs)。期望值和 hook 用同一个时刻,
+//   整套测试跑过午夜也不会跨天误红。钉的是「现在」,不是写死的日期 —— 写死的日期第二天就过期。
+process.env.BELLTOWER_NOW ||= new Date().toISOString();
+const PINNED = new Date(process.env.BELLTOWER_NOW);
 // ★ 今天的日期在这儿**自己算一遍**,不 import lib/now.mjs ——
 //   否则 ymd() 被改坏时测试的期望值跟着一起坏,断言永远绿(变异:M37)。
 const TODAY = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
-}).format(new Date());
+}).format(PINNED);
 // 「真时刻」的形状:年/月/日 … 时:分 (America/New_York)。占位串顶不上(变异:M36)。
 const STAMP_SHAPE = /\d{4}\/\d{2}\/\d{2}\D*\d{2}:\d{2} \(America\/New_York\)/;
 
 // Stop 闸门是「输出 JSON 说 block」,不是 exit 2 —— 判据跟 PreToolUse 不一样。
 function stopHook({ flags = "", lastText = "", journal = null, journalDelta = 0,
                     stopHookActive = false, sid = "stoptest", ctxTokens = 0, bloat = 0,
-                    settings = null, compactions = 0, cfg = null }) {
+                    settings = null, compactions = 0, cfg = null, pool = null, env = {} }) {
   const dir = sandbox();
   if (cfg) withCfg(dir, cfg);
+  if (pool !== null) writeFileSync(join(dir, "docs/session-pool.md"), pool);
   const tp = join(dir, "transcript.jsonl");
   writeFileSync(tp, JSON.stringify(
     { type: "assistant", message: { content: [{ text: lastText }] } }) + "\n");
@@ -123,7 +128,8 @@ function stopHook({ flags = "", lastText = "", journal = null, journalDelta = 0,
     utimesSync(jp, t / 1000, t / 1000);
   }
   const r = runIn(dir, "guard-stop.mjs",
-    { session_id: sid, transcript_path: tp, stop_hook_active: stopHookActive });
+    { session_id: sid, transcript_path: tp, stop_hook_active: stopHookActive },
+    { CLAUDE_CODE_REMOTE_SESSION_ID: "", ...env });   // 默认当本机会话:别让跑测试的云容器自己的会话 ID 漏进来
   let j = null; try { j = JSON.parse(r.out); } catch {}
   return { ...r, decision: j?.decision ?? null, reason: j?.reason ?? "" };
 }
@@ -282,6 +288,22 @@ assert("绿:本会话直接写过 journal → 放行",
 assert("绿:闸7 只拦一次(第二次放行)",
   stopOk(stopHook({ flags: EDITED + "journal-reminded\n",
                     journal: OLD_JOURNAL, journalDelta: 5000 })));
+// 列表式 journal:末行「- 日期 · …」也算今日(第一版只认日期打头,用列表写的项目每次必误拦)
+assert("绿:journal 末行是列表项「- 今日 · …」且本会话动过 → 放行",
+  stopOk(stopHook({ flags: EDITED, journal: "- " + TODAY_JOURNAL.trim().split("\n").pop() + "\n", journalDelta: 5000 })));
+assert("红:列表项但日期是旧的 → 照样 block",
+  blocked(stopHook({ flags: EDITED, journal: "- " + OLD_JOURNAL, journalDelta: 5000 })));
+// 工人不拦:任务书规定工人不写台账。认法 = 云会话 + 活表里没有它的塔行。
+const POOL = "| 塔 | 板块 skill |\n|---|---|\n| dev | `tower-dev` | 云 | session_TOWERDEV0000000000001 | |\n";
+assert("绿:工人(云会话,活表里没有它的塔行)改了文件不写 journal → 不拦",
+  stopOk(stopHook({ flags: EDITED, journal: OLD_JOURNAL, journalDelta: 5000, pool: POOL,
+                    env: { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_WORKER00000000000000001" } })));
+assert("红:塔(会话 ID 对上活表塔行)改了文件不写 journal → 照样拦",
+  blocked(stopHook({ flags: EDITED, journal: OLD_JOURNAL, journalDelta: 5000, pool: POOL,
+                     env: { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_TOWERDEV0000000000001" } })));
+assert("红:云会话但活表读不到(认不出是不是工人)→ 照样拦",
+  blocked(stopHook({ flags: EDITED, journal: OLD_JOURNAL, journalDelta: 5000,
+                     env: { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_WORKER00000000000000001" } })));
 assert("绿:stop_hook_active 时一律放行(防循环)",
   stopOk(stopHook({ flags: PY + EDITED, lastText: "修好了",
                     journal: OLD_JOURNAL, journalDelta: 5000, stopHookActive: true })));
@@ -432,9 +454,14 @@ assert("绿:设置写成字符串 \"300k\"(平台会忽略)→ 闸门也当没�
 // ── 闸门10 / 11:MCP 工具那两个口子 ────────────────────────────────────
 const mcp = (dir, sid, tool_name, tool_input = {}) =>
   runIn(dir, "guard-mcp.mjs", { session_id: sid, tool_name, tool_input });
+const seed0 = (dir, sid, txt) => {
+  mkdirSync(join(dir, ".claude/.session-state"), { recursive: true });
+  writeFileSync(join(dir, ".claude/.session-state", `${sid}.flags`), txt);
+};
+const SRC = { source_url: "https://example.com/r.git", source_revision: "main" };   // 闸门13 要的两个参数
 {
   const d = sandbox();
-  const r = mcp(d, "m1", "mcp__Claude_Code_Remote__create_session", { title: "Q301 · 某某" });
+  const r = mcp(d, "m1", "mcp__Claude_Code_Remote__create_session", { title: "Q301 · 某某", ...SRC });
   assert("红:派工人(create_session)先问铁律6 那两句", denied(r));
   // ★ 话术里那三问是这道闸的全部价值 —— 只查 exit code 等于什么都没查。
   //   ③「归档了吗」是 2026-09-15 加的:hook 调不了 archive_session,
@@ -445,7 +472,7 @@ const mcp = (dir, sid, tool_name, tool_input = {}) =>
   //   钉住问句本身。[实测✅ 2026-09-15 MUT-G10d 抓到这条假绿]
   assert("闸10 问到「上一个工人归档了吗」", /归档了吗/.test(r.err), r.err.slice(0, 80));
   assert("绿:闸10 只拦一次(第二次放行)",
-    allowed(mcp(d, "m1", "mcp__Claude_Code_Remote__create_session", { title: "Q301 · 某某" })));
+    allowed(mcp(d, "m1", "mcp__Claude_Code_Remote__create_session", { title: "Q301 · 某某", ...SRC })));
 }
 {
   const d = sandbox();
@@ -458,11 +485,39 @@ const mcp = (dir, sid, tool_name, tool_input = {}) =>
 {
   const d = sandbox();
   assert("绿:闸10 拦过之后,合 PR 仍然由闸11 自己拦(旗标不串)",
-    denied(mcp(d, "m3", "mcp__Claude_Code_Remote__create_session")) &&
+    denied(mcp(d, "m3", "mcp__Claude_Code_Remote__create_session", SRC)) &&
     denied(mcp(d, "m3", "mcp__github__merge_pull_request", { pullNumber: 1 })));
 }
 assert("绿:别的 MCP 工具不拦",
   allowed(mcp(sandbox(), "m4", "mcp__github__list_pull_requests")));
+
+// ── 闸门13:create_session 要带 source_url + source_revision ──────────────
+{
+  const d = sandbox();
+  seed0(d, "s1", "dispatch-reminded\n");   // 闸门10 已经问过,这里只看闸门13
+  const r = mcp(d, "s1", "mcp__Claude_Code_Remote__create_session", { title: "Q302 · 某某", source_url: "https://example.com/r.git" });
+  assert("红:create_session 只带 source_url、没带 source_revision → 拦", denied(r) && /source_revision/.test(r.err), r.err.slice(0, 120));
+  assert("绿:闸13 同一个标题原样再来一次放行(软闸)",
+    allowed(mcp(d, "s1", "mcp__Claude_Code_Remote__create_session", { title: "Q302 · 某某", source_url: "https://example.com/r.git" })));
+  assert("红:闸13 换一个标题要再拦一次(按标题记,不是一个会话只拦一次)",
+    denied(mcp(d, "s1", "mcp__Claude_Code_Remote__create_session", { title: "Q303 · 别的", source_url: "https://example.com/r.git" })));
+  assert("红:两个都没带 → 拦,两个都点名",
+    ((x) => denied(x) && /source_url/.test(x.err) && /source_revision/.test(x.err))(
+      mcp(d, "s1", "mcp__Claude_Code_Remote__create_session", { title: "Q304" })));
+  assert("绿:两个都带了 → 闸13 不拦",
+    allowed(mcp(d, "s1", "mcp__Claude_Code_Remote__create_session", { title: "Q305", ...SRC })));
+}
+
+// ── 旗标按整行比对:#42 的旗标不能冒充 #4 ─────────────────────────────────
+{
+  const d = sandbox();
+  seed0(d, "p1", "readpr:42\n");
+  assert("红:读过 #42 不等于读过 #4(旗标不许前缀匹配)",  // scan-public:ok(测试夹具)
+    denied(mcp(d, "p1", "mcp__github__merge_pull_request", { pullNumber: 4 })));
+  seed0(d, "p2", "openedcodepr:42\nreadpr:4\n");
+  assert("绿:开过代码 PR #42、读过 #4 → 合 #4 放行(硬闸不许被 #42 误触)",  // scan-public:ok(测试夹具)
+    allowed(mcp(d, "p2", "mcp__github__merge_pull_request", { pullNumber: 4 })));
+}
 
 // ── 闸门11 v2:代码 PR 不许自己开自己合(乙)────────────────────────────
 const seed = (dir, sid, txt) =>
@@ -558,6 +613,13 @@ const seed = (dir, sid, txt) =>
   const r = runIn(withCfg(sandbox(), { timezone: "Asia/Tokyo" }), "now.mjs", {});
   assert("now.mjs 的时区从配置读",
     /\d{4}\/\d{2}\/\d{2}\D*\d{2}:\d{2} \(Asia\/Tokyo\)/.test(r.out), r.out.slice(0, 120));
+}
+// 钉时钟:测试模式认 BELLTOWER_NOW;不在测试模式时一律不认(生产里谁设了这个变量也改不了时刻)
+{
+  const r = runIn(sandbox(), "now.mjs", {}, { BELLTOWER_NOW: "2031-01-02T15:04:00Z" });
+  assert("测试模式下 hook 认钉住的时刻(BELLTOWER_NOW)", /2031\/01\/02/.test(r.out), r.out.slice(0, 120));
+  const p = runIn(sandbox(), "now.mjs", {}, { BELLTOWER_NOW: "2031-01-02T15:04:00Z", CLAUDE_HOOK_TEST: "0" });
+  assert("不在测试模式时不认钉住的时刻", !/2031\/01\/02/.test(p.out) && STAMP_SHAPE.test(p.out), p.out.slice(0, 120));
 }
 const start = (dir, sid = "") => runIn(dir, "session-start.mjs", {}, { CLAUDE_CODE_REMOTE_SESSION_ID: sid });
 {

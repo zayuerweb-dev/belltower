@@ -32,7 +32,9 @@ const LEDGER = [
   'docs/session-pool.md',
   'docs/gate-log.md',
 ];
-const TMP = '_ledger_tmp';
+// 临时分支名带进程号 + 时间:同一台机器多个工作树同时跑,写死一个名字会互撞
+// (checkout -B 失败 / 删分支报 checked out at)。脚本只删自己建的这一个。
+const TMP = `_ledger_tmp_${process.pid}_${Date.now().toString(36)}`;
 const MAX_RETRY = 3;
 // owner/repo 只用来打印开 PR 的命令:先读 .claude/belltower.json 的 repo,没有就从 origin 的 URL 现解析。
 const [OWNER, REPO] = (() => {
@@ -60,8 +62,17 @@ const die = (msg) => { console.error('\n✗ ' + msg + '\n'); process.exit(1); };
 
 const msg = process.argv[2];
 
-const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
+// ★ detached HEAD(云会话开局常是这个状态)下 `rev-parse --abbrev-ref HEAD` 得到字面的 "HEAD":
+//   拿它回切等于原地不动(人被留在临时分支上),拿它取台账文件等于从临时分支(= origin/main)取 ——
+//   本塔的改动被静默丢掉。是装了框架的项目实测踩到、靠 reflog 救回来的。
+//   所以分支名只在真有分支时用;回切、取文件一律用 `home`:有分支 = 分支名,detached = 当时的提交 sha。
+//   detached 下**不**自动建分支:建了就得推,而远端分支云会话删不掉(platform-facts §5.6)。
+let branch = null;
+try { branch = git('symbolic-ref', '-q', '--short', 'HEAD'); } catch {}
+const label = branch ?? 'detached HEAD';
 if (branch === 'main') die('你已经在 main 上了,直接 commit + push 就行,不用这个脚本。');
+let home = branch;   // 每次切去临时分支之前重新取(detached 下 sha 会因为提交 / merge 前进)
+const goHome = () => (branch ? git('checkout', branch) : git('checkout', '--detach', home));
 
 // ── 1) 工作区体检:只许台账有改动 ──────────────────────────────
 const dirty = git('status', '--porcelain')
@@ -80,7 +91,7 @@ if (changed.length) {
   console.log('台账改动:\n    ' + changed.join('\n    '));
   git('add', ...changed);
   git('commit', '-m', msg);
-  console.log(`\n已提交到 ${branch}:${git('rev-parse', '--short', 'HEAD')}`);
+  console.log(`\n已提交到 ${label}:${git('rev-parse', '--short', 'HEAD')}`);
 } else {
   console.log('工作区干净,只做同步。');
 }
@@ -95,6 +106,7 @@ if (changed.length) {
 // 为什么不让脚本自己调 GitHub API:记账脚本不该拿着能改仓库的凭据,
 // 而且塔手里本来就有 mcp__github__*,多这一步换来的是脚本零凭据。
 function pushOwnBranch() {
+  if (!branch) return false;   // detached:没有自己的分支可推
   for (let i = 1; i <= MAX_RETRY; i++) {
     try { git('push', '-u', 'origin', branch); return true; } catch (e) {
       if (i === MAX_RETRY) {
@@ -110,20 +122,20 @@ function pushOwnBranch() {
 function prMode() {
   // HEAD 此刻在 TMP 上 = origin/main + 本塔的台账四件,除台账外一个文件不差
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(2, 13);  // 年月日T时分,例 260925T1643
-  const slug = branch.replace(/^claude\//, '').replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 40);
+  const slug = (branch ?? 'detached').replace(/^claude\//, '').replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 40);
   const ledgerBranch = `ledger/${slug}-${stamp}`;
-  const title = `台账 · ${msg || `同步(来自 ${branch})`}`;
+  const title = `台账 · ${msg || `同步(来自 ${label})`}`;
 
   let pushed = false;
   for (let i = 1; i <= MAX_RETRY && !pushed; i++) {
     try { git('push', 'origin', `${TMP}:refs/heads/${ledgerBranch}`); pushed = true; }
     catch (e) {
       if (i === MAX_RETRY) {
-        git('checkout', branch);
+        goHome();
         try { git('branch', '-D', TMP); } catch {}
         die('台账分支也推不上去(试了 ' + MAX_RETRY + ' 次):\n' +
             String(e.stderr || e.message).trim() +
-            '\n  台账那笔提交还在 ' + branch + ' 上,没丢。');
+            '\n  台账那笔提交还在 ' + label + ' 上(' + home.slice(0, 12) + '),没丢。');
       }
     }
   }
@@ -132,10 +144,10 @@ function prMode() {
   try {
     mkdirSync(dirname(PENDING), { recursive: true });
     writeFileSync(PENDING, JSON.stringify(
-      { branch: ledgerBranch, from: branch, title, at: new Date().toISOString() }, null, 2));
+      { branch: ledgerBranch, from: label, title, at: new Date().toISOString() }, null, 2));
   } catch {}
 
-  git('checkout', branch);
+  goHome();
   try { git('branch', '-D', TMP); } catch {}
   const branchPushed = pushOwnBranch();
 
@@ -143,7 +155,7 @@ function prMode() {
 ⚠ **台账还没进 main** —— 直推被挡住了(main 上了分支保护),已转 PR 模式。
 
 台账已推成分支:**${ledgerBranch}**(内容 = origin/main + 本塔台账四件,别的文件一个没带)
-${branchPushed ? `${branch} 也推上去了` : ''}
+${branchPushed ? `${branch} 也推上去了` : (branch ? '' : '(detached HEAD,没有自己的分支要推)')}
 
 **接下来这两步是你(塔)的,脚本干不了 —— 不做的话别的塔读不到这笔台账:**
 
@@ -151,12 +163,12 @@ ${branchPushed ? `${branch} 也推上去了` : ''}
      mcp__github__create_pull_request
        owner=${OWNER} repo=${REPO} base=main head=${ledgerBranch}
        title=${JSON.stringify(title)}
-       body="台账同步,只动 docs/journal.md · BACKLOG.md · session-pool.md · gate-log.md 四件。来源分支 ${branch}。"
+       body="台账同步,只动 docs/journal.md · BACKLOG.md · session-pool.md · gate-log.md 四件。来源 ${label}。"
 
-  2) 合 PR。两条路,优先第一条:
-     甲) mcp__github__enable_pr_auto_merge —— CI 绿了 GitHub 自己合,**塔不用等**
-     乙) 等 CI 绿(约 1–2 分钟)后:先 mcp__github__pull_request_read 看实际状态
-         (闸门11 要求,不许凭 CI 徽章就合),再 mcp__github__merge_pull_request
+  2) 合 PR:先 mcp__github__pull_request_read 读实际状态(闸门11 要求,不许凭徽章就合),
+     能合就直接 mcp__github__merge_pull_request。
+     只有在 PR 上真跑 CI、而且 CI 还没跑完时,才用 mcp__github__enable_pr_auto_merge 让它绿了自己合。
+     ⚠ PR 上不跑 CI 的仓库,别把 CI 设成必过检查 —— 那样检查永远挂在 Pending,台账 PR 永远合不了。
 
   ⚠ PR 报 not mergeable / 冲突 = 别的塔在你开 PR 之后先合了它的台账。
      **重跑一次本脚本**(它会 fetch + merge origin/main 再来),不要手工去改 PR 分支。
@@ -175,27 +187,28 @@ for (let i = 1; i <= MAX_RETRY && !pushedSha; i++) {
     git('merge', '--no-edit', 'origin/main');
   } catch {
     try { git('merge', '--abort'); } catch {}
-    die('把 main 并进 ' + branch + ' 时冲突了,git 自己解不开。\n' +
+    die('把 main 并进 ' + label + ' 时冲突了,git 自己解不开。\n' +
         '  手工解一次:git merge origin/main —— 解完再跑这个脚本。');
   }
 
+  home = branch ?? git('rev-parse', 'HEAD');
   git('checkout', '-B', TMP, 'origin/main');
   try {
-    git('checkout', branch, '--', ...LEDGER);
+    git('checkout', home, '--', ...LEDGER);
   } catch (e) {
-    git('checkout', branch);
+    goHome();
     try { git('branch', '-D', TMP); } catch {}
     die('取台账文件失败:' + String(e.stderr || e.message));
   }
 
   if (!git('status', '--porcelain')) {
-    git('checkout', branch);
+    goHome();
     git('branch', '-D', TMP);
     console.log('\n✓ main 上的台账已经跟你这边一致,没什么要推的。');
     process.exit(0);
   }
 
-  git('commit', '-m', msg || `台账同步(来自 ${branch})`);
+  git('commit', '-m', msg || `台账同步(来自 ${label})`);
 
   // push 之前记下 main 此刻的 sha —— 失败后就靠它分辨两种失败,不靠读错误文字
   const mainBefore = git('rev-parse', 'origin/main');
@@ -216,21 +229,21 @@ for (let i = 1; i <= MAX_RETRY && !pushedSha; i++) {
     }
 
     console.log(`  第 ${i} 次 push 被拒(origin/main 动了 = 别的塔抢先推了),重来…`);
-    git('checkout', branch);
+    goHome();
     try { git('branch', '-D', TMP); } catch {}
     if (i === MAX_RETRY) die('连试 ' + MAX_RETRY + ' 次都推不上去:\n' + String(e.stderr || e.message));
   }
 }
 
 // ── 4) 收摊:把刚推上 main 的那版并回自己分支,两边保持一致 ────
-git('checkout', branch);
+goHome();
 git('branch', '-D', TMP);
 git('fetch', 'origin', 'main');
 try {
   git('merge', '--no-edit', 'origin/main');
 } catch {
   try { git('merge', '--abort'); } catch {}
-  console.log('\n⚠ 台账已上 main,但并回 ' + branch + ' 时冲突了,自己 git merge origin/main 解一下。');
+  console.log('\n⚠ 台账已上 main,但并回 ' + label + ' 时冲突了,自己 git merge origin/main 解一下。');
 }
 
 // ── 5) 把自己分支也推上去 ────────────────────────────────────
@@ -240,5 +253,5 @@ try {
 const branchPushed = pushOwnBranch();
 
 console.log(`\n✓ 台账已上 main:${pushedSha}`);
-console.log(`✓ 回到 ${branch},两边一致${branchPushed ? ';分支也推上去了' : ''}`);
+console.log(`✓ 回到 ${label},两边一致${branchPushed ? ';分支也推上去了' : ''}`);
 console.log('\n别的塔下次 git fetch origin main 就读得到了。');

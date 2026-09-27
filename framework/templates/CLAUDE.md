@@ -169,7 +169,7 @@
 > | `⚠ 台账还没进 main`,给你一个 `ledger/…` 分支 | **还在分支上,别的塔读不到** | **开 PR 并合**,命令脚本已经打好给你 |
 >
 > 第二种照着打印的两步走:`create_pull_request`(base=main,head=那个 `ledger/…` 分支)→
-> **`enable_pr_auto_merge`**(CI 绿了 GitHub 自己合,塔不用干等)。
+> `pull_request_read` 读实际状态,能合就合(PR 上真跑 CI 且还没跑完,才用 `enable_pr_auto_merge` 等它绿)。
 > PR 报 not mergeable = 别的塔先合了它的台账,**重跑一次 `ledger-push` 就行**,别去手改 PR 分支。
 >
 > **怎么分辨「被规则挡了」和「别的塔抢先推了」**:脚本不读 GitHub 的错误文字(措辞会变),

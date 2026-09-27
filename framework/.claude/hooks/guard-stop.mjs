@@ -10,7 +10,7 @@ import { readFileSync, existsSync, appendFileSync, statSync, unlinkSync } from "
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { ymd } from "./lib/now.mjs";
-import { config } from "./lib/config.mjs";
+import { config, whoAmI } from "./lib/config.mjs";
 
 let input;
 try { input = JSON.parse(readFileSync(0, "utf8")); } catch { process.exit(0); }
@@ -123,8 +123,8 @@ if (existsSync(PENDING)) {
             "**开 PR 和合 PR 是你的事**:\n" +
             "  1) mcp__github__create_pull_request  base=main head=" + p.branch + "\n" +
             "     title=" + JSON.stringify(p.title ?? "台账同步") + "\n" +
-            "  2) mcp__github__enable_pr_auto_merge(CI 绿了自动合,不用等)\n" +
-            "     或者等 CI 绿之后 pull_request_read 看过实际状态再 merge_pull_request\n\n" +
+            "  2) pull_request_read 读实际状态,能合就 merge_pull_request;\n" +
+            "     PR 上真跑 CI 且还没跑完,才用 enable_pr_auto_merge 等它绿了自己合\n\n" +
             "  PR 报 not mergeable = 别的塔先合了它的台账,**重跑一次 " +
             "`node scripts/ledger-push.mjs`** 即可。\n" +
             "  合掉之后这个记号本闸会自己清掉(它查的是台账进没进 main,不是这个文件)。\n" +
@@ -145,16 +145,21 @@ const journalTouchedThisSession = () => {
     return statSync("docs/journal.md").mtimeMs >= born;
   } catch { return true; }
 };
+// 末行可以写成列表项(「- 2026-…」「* 2026-…」),先剃掉列表记号再看日期 ——
+// 第一版只认「日期打头」,用列表写 journal 的项目每次必误拦(是装了框架的项目报上来的)。
 const journalWrittenToday = () => {
   try {
     const lines = readFileSync("docs/journal.md", "utf8").split(/\r?\n/)
       .map((s) => s.trim()).filter(Boolean);
-    const last = lines[lines.length - 1] ?? "";
+    const last = (lines[lines.length - 1] ?? "").replace(/^[-*+]\s+/, "");
     if (!last.startsWith(ymd())) return false;
     return journalTouchedThisSession();
   } catch { return false; }
 };
-if (/^edit:/m.test(flags) && !/^edit:docs\/journal\.md$/m.test(flags) &&
+// 工人不拦:任务书规定工人不写台账(dispatch.md),拦它等于逼它违规。
+// 认法 = 云会话、活表读得到、但活表里没有它的塔行(whoAmI)。认不出来(本机会话、活表缺)照旧拦。
+const iAmWorker = (() => { try { const w = whoAmI(); return w.remote && w.pool && !w.board; } catch { return false; } })();
+if (!iAmWorker && /^edit:/m.test(flags) && !/^edit:docs\/journal\.md$/m.test(flags) &&
     !journalWrittenToday() && !flags.includes("journal-reminded")) {
   remember("journal-reminded");
   block("闸门7:本会话改过文件,而 docs/journal.md 末行不是今日、本会话也没写过它。\n" +

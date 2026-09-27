@@ -15,6 +15,9 @@ const sid = String(input.session_id ?? "unknown");
 const stateFile = join(".claude/.session-state", `${sid}.flags`);
 let flags = "";
 try { flags = readFileSync(stateFile, "utf8"); } catch {}
+// 按整行比对。带编号的旗标(readpr:4)不能用 includes:它会命中 readpr:42 ——
+// 读过 #42 就当读过 #4(软闸漏放),开过 #42 就把合 #4 硬拦住(硬闸误拦)。是装了框架的项目报上来的。
+const has = (k) => flags.split("\n").includes(k);
 const remember = (k) => {
   try { mkdirSync(".claude/.session-state", { recursive: true }); appendFileSync(stateFile, k + "\n"); } catch {}
 };
@@ -57,12 +60,31 @@ if (/pull_request_read$/.test(tool)) {
   process.exit(0);
 }
 
+// ── 闸门13:开会话要带 source_url + source_revision ─────────────────────────
+// 出处(2026-09-26):只传 source_url、不传 source_revision,会话拿得到仓库,但在桌面 App 侧栏里
+//   落进「Other」,用户找不到。配方(dispatch.md §4)改了也传不到常驻塔:闸门10 一个会话只拦一次,
+//   塔早读过旧配方,不会回去重读 —— 一个项目改完配方后现数,工人里仍有四成没带 revision。
+// ★ 软闸:每个标题拦一次,原样再来就放行 —— 平台哪天改了参数名,不至于把派发卡死(fail-open 精神)。
+if (/create_session$/.test(tool)) {
+  const ti = input.tool_input ?? {};
+  const miss = ["source_url", "source_revision"].filter((k) => !ti[k]);
+  const key = `srcrev-reminded:${String(ti.title ?? "").slice(0, 60).replace(/\n/g, " ")}`;
+  if (miss.length && !has(key)) {
+    remember(key);
+    deny(`闸门13:这次 create_session 没带 ${miss.map((k) => "`" + k + "`").join("、")}。\n` +
+         `  只传 source_url、不传 source_revision 的会话拿得到仓库,但在桌面 App 侧栏里落进「Other」,\n` +
+         `  不进项目那一组,用户找不到它(platform-facts §4.1)。两个都写上:\n` +
+         `    source_url: <本仓库的 https 地址>   source_revision: "main"\n` +
+         `  确实不需要(或者平台改了参数名),原样再来一次就放行。`);
+  }
+}
+
 // ── 闸门10:派工人也要过铁律6 ────────────────────────────────────────────
 // 出处(2026-09-10):闸门4 只看 `docs/BACKLOG.md` 的队列行 ——
 //   塔**直接 create_session 不写队列行就整条绕过去**。
 //   规矩本身是铁律6:立号前必须有用户那句「做这个」;别的塔的活不许替它立号。
 // ★ 这道闸补的是「动作」那一侧,闸门4 补的是「台账」那一侧,两边都要有。
-if (/create_session$/.test(tool) && !flags.includes("dispatch-reminded")) {
+if (/create_session$/.test(tool) && !has("dispatch-reminded")) {
   const t = String(input.tool_input?.title ?? input.tool_input?.prompt ?? "").slice(0, 60);
   remember("dispatch-reminded");
   deny(`闸门10:要派一个工人出去${t ? `(「${t}…」)` : ""}。派之前两句必须答得上来:\n` +
@@ -89,7 +111,7 @@ if (/create_session$/.test(tool) && !flags.includes("dispatch-reminded")) {
 //   **同一个会话既当作者又当合并人**,那是最常见的形态。
 if (/merge_pull_request$/.test(tool)) {
   const n = String(input.tool_input?.pullNumber ?? input.tool_input?.pull_number ?? "");
-  if (n && flags.includes(`openedcodepr:${n}`))
+  if (n && has(`openedcodepr:${n}`))
     deny(`闸门11:PR #${n} 是**你自己这个会话开的**,而且它动了代码目录里的真代码。\n` +
          `  规矩:**代码 PR 不许自己开自己合** —— 换一个塔核完 diff 再合。\n\n` +
          `  怎么换:把 PR 号发给另一个塔(create_trigger 带 persistent_session_id → fire_trigger,\n` +
@@ -97,7 +119,7 @@ if (/merge_pull_request$/.test(tool)) {
          `  **这一条没有「再来一次就放行」** —— 你自己合不了这个 PR。`);
 
   // 每个 PR 各拦一次:合之前得真去读过它的实际状态,不许只读 PR 描述。
-  if (n && !flags.includes(`readpr:${n}`) && !flags.includes(`mergeasked:${n}`)) {
+  if (n && !has(`readpr:${n}`) && !has(`mergeasked:${n}`)) {
     remember(`mergeasked:${n}`);
     deny(`闸门11:要合 PR #${n},但本会话**没有读过它的实际状态**。\n` +
          `  先 mcp__github__pull_request_read 看三样,再回来合:\n` +

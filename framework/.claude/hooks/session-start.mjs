@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { basename, resolve } from "node:path";
 import { stamp } from "./lib/now.mjs";
-import { config, SKILL_PREFIX } from "./lib/config.mjs";
+import { config, whoAmI } from "./lib/config.mjs";
 
 const cfg = config();
 const out = [];
@@ -22,15 +22,10 @@ out.push(`仓库:${cfg.project || basename(resolve("."))}`);
 //   压缩 / 恢复之后摘要未必还带着它。**身份靠记性 = 必丢** —— 所以每次开局 / 恢复 / 压缩后
 //   都从会话 ID 现查活表:容器里 CLAUDE_CODE_REMOTE_SESSION_ID=cse_<X> ↔ 活表 session_<X>。
 //   (本 hook 在 startup / resume / compact 都会跑;门铃唤醒 = resume,所以每次被叫醒都会重新认一次。)
-// 活表行格式:`| <板块> | \`tower-<板块>\` | … session_<X> … |`,板块必须在配置的板块清单里。
+// 活表怎么对:见 lib/config.mjs 的 whoAmI()(收尾闸门7 也用它认工人)。
 try {
-  const m = String(process.env.CLAUDE_CODE_REMOTE_SESSION_ID ?? "").match(/^cse_(\w+)$/);
-  if (m) {
-    const boards = cfg.boards.map(esc).join("|");
-    const rowRe = new RegExp(`^\\| (${boards}) \\| \`${esc(SKILL_PREFIX)}(${boards})\``);
-    const row = readFileSync("docs/session-pool.md", "utf8").split("\n")
-      .find((l) => rowRe.test(l) && l.includes(`session_${m[1]}`));
-    const board = row?.match(rowRe)?.[1];
+  {
+    const { board } = whoAmI();
     if (board) {
       out.push(`★ 你是 **${board} 塔**(常驻)—— 会话 ID 对上活表那一行,现查的,不是凭记忆。`);
       out.push("  塔的本分:讨论 → 定 → 派工人 → 收活。**成品活派工人,别在塔里干** —— " +

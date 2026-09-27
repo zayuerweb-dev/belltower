@@ -57,3 +57,20 @@ export function regex(src, flags = "i") {
 
 // skill 前缀固定,不做成可配置:身份锚、活表、文档引用全靠它对得上。
 export const SKILL_PREFIX = "tower-";
+
+// ── 我是哪个塔:从会话 ID 现查活表(开局 hook 和收尾闸门共用,规矩只存一份)──────────
+// 云会话的环境变量 CLAUDE_CODE_REMOTE_SESSION_ID=cse_<X> ↔ 活表 `docs/session-pool.md` 里写的 session_<X>。
+// 活表行格式:`| <板块> | \`tower-<板块>\` | … session_<X> … |`,板块必须在配置的板块清单里。
+// 返回 { remote: 是不是云会话, pool: 活表读到没有, board: 对上的板块或 null }。
+//   remote && pool && !board = 活表里没有它的塔行 = 工人(或别的临时会话)。
+export function whoAmI() {
+  const m = String(process.env.CLAUDE_CODE_REMOTE_SESSION_ID ?? "").match(/^cse_(\w+)$/);
+  if (!m) return { remote: false, pool: false, board: null };
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const boards = config().boards.map(esc).join("|");
+  const rowRe = new RegExp(`^\\| (${boards}) \\| \`${esc(SKILL_PREFIX)}(${boards})\``);
+  let text;
+  try { text = readFileSync("docs/session-pool.md", "utf8"); } catch { return { remote: true, pool: false, board: null }; }
+  const row = text.split("\n").find((l) => rowRe.test(l) && l.includes(`session_${m[1]}`));
+  return { remote: true, pool: true, board: row?.match(rowRe)?.[1] ?? null };
+}
