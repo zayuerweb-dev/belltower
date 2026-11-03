@@ -271,6 +271,17 @@ assert("红:配置 codeExt 含 rb → 改 .rb 说完成没证据 → block",
 assert("绿:改的是文档不是源文件 → 说完成不拦",
   stopOk(stopHook({ flags: "edit:docs/x.md\n", lastText: "修好了",
                     journal: TODAY_JOURNAL, journalDelta: 5000 })));
+// ★ 只认仓库内的路径:guard-edit 对仓库外的文件记绝对路径(scratchpad、/tmp 里的一次性脚本),
+//   那不算「改过代码」。四种写法各钉一条 —— 少排除哪一种,对应那条就红。
+const OUTSIDE = ["/tmp/once.py", "C:/work/once.py", "D:\\work\\once.py", "../other/once.py"];
+for (const p of OUTSIDE)
+  assert(`绿:只改了仓库外的 ${p} + 说完成、没证据 → 不拦(一次性脚本不算改过代码)`,
+    stopOk(stopHook({ flags: `edit:${p}\n`, lastText: "修好了",
+                      journal: TODAY_JOURNAL, journalDelta: 5000 })));
+// 配对的红:仓库外的改动不许把仓库内的盖掉(只看第一行、或「有仓库外的就整个放行」都会在这儿露馅)。
+assert("红:改了仓库外的,也改了仓库内的 src/x.py + 说完成、没证据 → 照样拦",
+  blocked(stopHook({ flags: OUTSIDE.map((p) => `edit:${p}\n`).join("") + PY, lastText: "修好了",
+                     journal: TODAY_JOURNAL, journalDelta: 5000 })));
 
 // ── Stop 闸门7:改了文件要写 journal ────────────────────────────────────
 const EDITED = "edit:docs/foo.md\n";
@@ -304,6 +315,14 @@ assert("红:塔(会话 ID 对上活表塔行)改了文件不写 journal → 照�
 assert("红:云会话但活表读不到(认不出是不是工人)→ 照样拦",
   blocked(stopHook({ flags: EDITED, journal: OLD_JOURNAL, journalDelta: 5000,
                      env: { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_WORKER00000000000000001" } })));
+// ★ 「改过文件」也只认仓库内的:只动了仓库外的临时文件,不该被要 journal。
+//   (这几条没说「完成」,闸6 不会插手 —— 红了就是闸7 自己的事。)
+for (const p of OUTSIDE)
+  assert(`绿:只改了仓库外的 ${p} → 闸7 不要 journal`,
+    stopOk(stopHook({ flags: `edit:${p}\n`, journal: OLD_JOURNAL, journalDelta: 5000 })));
+assert("红:改了仓库外的,也改了仓库内的文件 → 闸7 照样拦",
+  blocked(stopHook({ flags: OUTSIDE.map((p) => `edit:${p}\n`).join("") + EDITED,
+                     journal: OLD_JOURNAL, journalDelta: 5000 })));
 assert("绿:stop_hook_active 时一律放行(防循环)",
   stopOk(stopHook({ flags: PY + EDITED, lastText: "修好了",
                     journal: OLD_JOURNAL, journalDelta: 5000, stopHookActive: true })));
@@ -348,6 +367,17 @@ assert("绿:别的文件里加 Qnn 行不拦",
   assert("绿:Write 覆盖但号没多不拦",
     allowed(runIn(d, "guard-edit.mjs", { session_id: "q7", tool_name: "Write",
       tool_input: { file_path: "docs/BACKLOG.md", content: QROW_NEW } })));
+}
+// ★ 四位号:段的 x01–x99 用完接 x001–x999(dispatch.md §3),meta 段 Q799 之后是 Q7001。
+//   QROW 只认到三位的话,`| Q7001 |` 根本不算队列行 —— 立号悄悄绕过这道闸;
+//   认成截短的 Q700,Q7001 和 Q7002 就成了「同一个号」,第二个也绕过去。
+{
+  const d = sandbox();
+  const Q4 = QROW_OLD + "| Q7001 | meta | 四位号 |\n";
+  assert("红:往执行队列加四位号 | Q7001 | → 认成新号、拦", denied(editQ(d, "q8", QROW_OLD, Q4)));
+  assert("绿:四位号也只拦一次(第二次原样再来就放行)", allowed(editQ(d, "q8", QROW_OLD, Q4)));
+  assert("红:已有 Q7001 再加 Q7002 → 照样是新号(四位号不许截成三位当成同一个)",
+    denied(editQ(sandbox(), "q9", Q4, Q4 + "| Q7002 | meta | 下一个 |\n")));
 }
 
 // ── 闸门5:授权词要带用户原话(塔不许给自己签字)────────────────────────

@@ -34,12 +34,21 @@ try {
   }
 } catch {}
 
+// ── 仓库内的改动(闸门6、7 共用)────────────────────────────────────────
+// guard-edit 往旗标里记 `edit:<路径>`:仓库内的文件记相对路径,**仓库外的记绝对路径**
+// (scratchpad、/tmp 里的一次性脚本)。第一版两道闸都不分 —— 只在 scratchpad 里写了个临时 .py,
+// 收尾说「完成」就会被闸门6 拦「改过源文件没贴证据」,再被闸门7 要一行 journal。
+// 仓库外的一次性脚本不算「改过代码」,也不算「改过文件」。
+// 仓库内 = 不以 / 开头、不是盘符开头(X:/ 或 X:\)、不以 ../ 开头。
+// (闸门8 本来就锚定相对路径,不用这一条。)
+const EDITED_IN_REPO = /^edit:(?![\\/]|[A-Za-z]:[\\/]|\.\.[\\/])/m;
+
 // ── 闸门6:改过源文件却在没有回归证据时宣布完成(铁律3、4)──────────────
 // 出处:改完代码说「修好了」、实际没重测,同类旧错复发了好几轮 —— 用户得反过来提醒「你要自己重测」。
-// 「源文件」= 配置 codeExt 里的扩展名(默认 py / ts / tsx / js / jsx / sql)。
+// 「源文件」= 配置 codeExt 里的扩展名(默认 py / ts / tsx / js / jsx / sql),而且得在仓库里(见上)。
 // 证据 = 转录里出现测试实际输出(PASS / OK / 数字比分 / 「回归全绿」字样)。
 const CODE_EXT = config().codeExt.map((e) => e.replace(/[^A-Za-z0-9]/g, "")).filter(Boolean);
-const EDITED_CODE = new RegExp(`^edit:.*\\.(${CODE_EXT.join("|") || "py"})$`, "m");
+const EDITED_CODE = new RegExp(`${EDITED_IN_REPO.source}.*\\.(${CODE_EXT.join("|") || "py"})$`, "m");
 const CLAIMS_DONE = /(完成|已修好|修好了|已上线|搞定|\bdone\b|\bfixed\b|\ball set\b)/i;
 const HAS_EVIDENCE = /(ALL PASS|\bPASS\b|\bOK\b|Gate ?A|\d+\s*\/\s*\d+|回归(全)?绿|测试通过)/i;
 if (EDITED_CODE.test(flags) && CLAIMS_DONE.test(lastText) &&
@@ -159,7 +168,8 @@ const journalWrittenToday = () => {
 // 工人不拦:任务书规定工人不写台账(dispatch.md),拦它等于逼它违规。
 // 认法 = 云会话、活表读得到、但活表里没有它的塔行(whoAmI)。认不出来(本机会话、活表缺)照旧拦。
 const iAmWorker = (() => { try { const w = whoAmI(); return w.remote && w.pool && !w.board; } catch { return false; } })();
-if (!iAmWorker && /^edit:/m.test(flags) && !/^edit:docs\/journal\.md$/m.test(flags) &&
+// 「改过文件」只认仓库内的(EDITED_IN_REPO,见闸门6 上面):只动了仓库外的临时文件不用写 journal。
+if (!iAmWorker && EDITED_IN_REPO.test(flags) && !/^edit:docs\/journal\.md$/m.test(flags) &&
     !journalWrittenToday() && !flags.includes("journal-reminded")) {
   remember("journal-reminded");
   block("闸门7:本会话改过文件,而 docs/journal.md 末行不是今日、本会话也没写过它。\n" +
