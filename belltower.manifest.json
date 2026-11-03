@@ -1,6 +1,6 @@
 {
   "name": "belltower",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "upstream": "https://github.com/zayuerweb-dev/belltower",
   "_comment": "framework = 框架文件,belltower-sync 会覆盖更新;init = 起步模板,只在 belltower-init 时拷一次、之后归项目,sync 永远不碰。路径:src 相对本仓库根,dst 相对项目根。",
   "framework": [
@@ -16,6 +16,7 @@
     { "src": "framework/.claude/belltower.example.json", "dst": ".claude/belltower.example.json" },
     { "src": "framework/.claude/skills/tower-meta/references/tower.md", "dst": ".claude/skills/tower-meta/references/tower.md" },
     { "src": "framework/.claude/skills/tower-meta/references/dispatch.md", "dst": ".claude/skills/tower-meta/references/dispatch.md" },
+    { "src": "framework/.claude/skills/tower-meta/references/patrol.md", "dst": ".claude/skills/tower-meta/references/patrol.md" },
     { "src": "framework/scripts/ledger-push.mjs", "dst": "scripts/ledger-push.mjs" },
     { "src": "framework/scripts/test-hooks.mjs", "dst": "scripts/test-hooks.mjs" },
     { "src": "framework/scripts/test-ledger-push.mjs", "dst": "scripts/test-ledger-push.mjs" },
@@ -38,6 +39,7 @@
     { "src": "framework/.claude/skills/tower-ops/SKILL.md", "dst": ".claude/skills/tower-ops/SKILL.md" },
     { "src": "framework/.claude/skills/tower-biz/SKILL.md", "dst": ".claude/skills/tower-biz/SKILL.md" },
     { "src": "framework/.claude/skills/tower-meta/SKILL.md", "dst": ".claude/skills/tower-meta/SKILL.md" },
-    { "src": "framework/.claude/skills/tower-test/SKILL.md", "dst": ".claude/skills/tower-test/SKILL.md" }
+    { "src": "framework/.claude/skills/tower-test/SKILL.md", "dst": ".claude/skills/tower-test/SKILL.md" },
+    { "src": "framework/.claude/skills/tower-patrol/SKILL.md", "dst": ".claude/skills/tower-patrol/SKILL.md" }
   ]
 }

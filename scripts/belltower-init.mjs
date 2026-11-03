@@ -2,7 +2,7 @@
 // 把 belltower 装进一个项目:框架文件 + 起步模板各拷一份。
 //
 // 用法:node scripts/belltower-init.mjs <项目目录> [--preset <预设>] [--force]
-//   - --preset:按项目类型只装一组塔(见 presets.json;不带参数值 = 列出预设)。不给 = 八个全装。
+//   - --preset:按项目类型只装一组塔(见 presets.json;不带参数值 = 列出预设)。不给 = 全装。
 //     选了预设:没选的板块不装 SKILL.md;新装的 belltower.json 只留选中的 boards / ranges;
 //     新装的 CLAUDE.md 板块路由表删掉没选的行,「塔」那一格填成预设里写的开塔时机。已有的文件不碰。
 //   - 框架文件(清单 framework):目标已有且不同 → 不覆盖,报出来;要更新走 belltower-sync。

@@ -5,8 +5,9 @@ description: 中枢板块——会话这台机器本身:上下文经济、subage
 
 # 中枢板块(tower-meta)
 
-> 这个 skill 是框架中枢。协议细节在两份参考文档里:
-> `references/tower.md`(塔协议:身份、门铃、生命周期)· `references/dispatch.md`(派工人配方、回查、收活)。
+> 这个 skill 是框架中枢。协议细节在三份参考文档里:
+> `references/tower.md`(塔协议:身份、门铃、生命周期)· `references/dispatch.md`(派工人配方、回查、收活)·
+> `references/patrol.md`(巡检塔的每日做法)。
 
 ## 会话生命周期
 
@@ -18,7 +19,8 @@ description: 中枢板块——会话这台机器本身:上下文经济、subage
 **落盘先于压缩**:长任务上下文过半,先把「做到哪 / 下一步」写回 `docs/` 再继续。
 compaction 丢细节无所谓,细节已经在盘上。
 
-塔是长命会话,它的身份怎么现查、自动压缩阈值、定期深度重开、每日清理,见 `references/tower.md`。
+塔是长命会话,它的身份怎么现查、自动压缩阈值,见 `references/tower.md`;
+每月深度重开、每日巡检归巡检塔,见 `references/tower.md` 与 `references/patrol.md`。
 
 ## 上下文经济六条
 
@@ -78,7 +80,7 @@ compaction 丢细节无所谓,细节已经在盘上。
 一个板块一个塔,多个讨论在同一个塔里并行。协议见 `references/tower.md`。
 **塔的形态由工作材料决定**:有材料、有持续讨论才开;没有就先不开。
 
-默认八个板块(清单在 `.claude/belltower.json` 的 `boards` 里配,号段默认每板块一个百位段,也可配):
+默认板块如下(清单在 `.claude/belltower.json` 的 `boards` 里配;号段默认每板块一个百位段,用完接四位,见 `references/dispatch.md` §3;也可配):
 
 | 塔 | 板块 skill | 默认号段 | 开塔时机(建议) |
 |---|---|---|---|
@@ -90,6 +92,10 @@ compaction 丢细节无所谓,细节已经在盘上。
 | biz | `tower-biz` | Q6xx | 一开始 |
 | meta | `tower-meta` | Q7xx | 一开始 |
 | test | `tower-test` | Q8xx | dev 开始交活时 |
+| patrol | `tower-patrol` | 无(不立号) | 跟 meta 一起开(例程都绑在它身上;用户在侧栏亲手开,不由 meta 代开) |
+
+**巡检塔只查不定**:定期的活(归档工人、查定时 CI、派回与回查、每月深度重开)归它跑,
+它的技能 `tower-patrol` 和 `references/patrol.md` 归 meta 改 —— **定规矩归 meta,查规矩归巡检**。
 
 <!-- 项目填写:本项目实际开了哪些塔、各自的开塔时机。 -->
 

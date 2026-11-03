@@ -187,7 +187,7 @@ if (!iAmWorker && EDITED_IN_REPO.test(flags) && !/^edit:docs\/journal\.md$/m.tes
 // ★ 正解:**转录里本来就有真数,不用估。** 最后一条 assistant 的 `message.usage`:
 //   `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`
 //   = 这一轮实际喂进去的上下文。实测 426,283 vs 平台报 418,019,差 2%(还隔了一分钟)。
-// ★ v3(2026-09-25,两层:自动压缩 30 万 + 每周深度重开):
+// ★ v3(2026-09-25,两层:自动压缩 30 万 + 定期深度重开 —— 当时每周,0.3.0 起每月、由巡检塔做):
 //   窗口从 `.claude/settings.json` 的 `autoCompactWindow` **现读**,不写死 —— 写死的数一定跟配置分叉(派生 > 存储)。
 //   **只认数字**:平台把字符串 "300k" 静默忽略 [实测 2026-09-24],闸门要是认了,
 //   就会以为窗口 30 万、而平台实际按默认窗口压(实测默认在 78.9 万左右才压),提醒就对不上了。

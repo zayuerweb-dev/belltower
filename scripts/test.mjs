@@ -44,6 +44,11 @@ execFileSync("git", ["init", "-q"], { cwd: P });
   const missing = all.filter((e) => !existsSync(join(P, e.dst))).map((e) => e.dst);
   assert(`init 装齐清单里 ${all.length} 项`, missing.length === 0, missing.join(", "));
   assert("init 写了 lock(带版本号)", JSON.parse(readFileSync(join(P, ".claude/belltower.lock.json"), "utf8")).version === man.version);
+  // 巡检塔是板块,但不立号:boards 里有它,ranges 里没有(期望值写死在这儿,不读 example 文件)
+  const cfgP = JSON.parse(readFileSync(join(P, ".claude/belltower.json"), "utf8"));
+  assert("init 不带预设:belltower.json 的 boards 含 patrol、ranges 不含 patrol(巡检塔没有号段)",
+    Array.isArray(cfgP.boards) && cfgP.boards.includes("patrol") && cfgP.ranges && !("patrol" in cfgP.ranges) && cfgP.ranges.meta === "Q7xx",
+    JSON.stringify(cfgP.boards) + JSON.stringify(cfgP.ranges));
 
   const t = node("scripts/test-hooks.mjs", [], P);
   const c = counts(t.stdout);
@@ -51,7 +56,7 @@ execFileSync("git", ["init", "-q"], { cwd: P });
     t.stdout.split("\n").filter((l) => /FAIL/.test(l)).join(" | "));
 
   const s = spawnSync(process.execPath, [".claude/hooks/session-start.mjs"], { cwd: P, encoding: "utf8" });
-  assert("装好的项目里开局 hook 能跑、报出八个板块", s.status === 0 && /plan \/ product \/ dev \/ data \/ ops \/ biz \/ meta \/ test/.test(s.stdout), s.stdout);
+  assert("装好的项目里开局 hook 能跑、报出九个板块", s.status === 0 && /plan \/ product \/ dev \/ data \/ ops \/ biz \/ meta \/ test \/ patrol/.test(s.stdout), s.stdout);
 
   writeFileSync(join(P, "CLAUDE.md"), "# 项目自己写的\n");
   const again = node(join(ROOT, "scripts/belltower-init.mjs"), [P]);
@@ -70,6 +75,8 @@ execFileSync("git", ["init", "-q"], { cwd: P });
     assert(`预设 ${k}:含 meta、每个板块都有开塔时机、都是框架里有的板块`,
       p.boards.includes("meta") && p.boards.every((b) => p.open[b] && existsSync(join(ROOT, `framework/.claude/skills/tower-${b}/SKILL.md`))),
       JSON.stringify(p));
+    assert(`预设 ${k}:带 patrol(定时例程绑在它身上),排在 meta 后面`,
+      p.boards.includes("patrol") && p.boards.indexOf("patrol") > p.boards.indexOf("meta"), JSON.stringify(p.boards));
   }
   const readme = readFileSync(join(ROOT, "README.md"), "utf8");
   const drift = Object.entries(presets).filter(([k, p]) => !readme.includes(`| \`${k}\` | ${p.boards.join(" · ")} |`));
@@ -80,17 +87,18 @@ execFileSync("git", ["init", "-q"], { cwd: P });
   execFileSync("git", ["init", "-q"], { cwd: Q });
   const r = node(join(ROOT, "scripts/belltower-init.mjs"), [Q, "--preset", "minimal"]);
   assert("init --preset minimal 退出 0", r.status === 0, r.stdout + r.stderr);
-  const skills = ["plan", "product", "dev", "data", "ops", "biz", "meta", "test"].filter((b) => existsSync(join(Q, `.claude/skills/tower-${b}/SKILL.md`)));
-  assert("init --preset minimal:只装 dev、meta 两个板块的 SKILL.md", skills.join() === "dev,meta", skills.join());
+  const skills = ["plan", "product", "dev", "data", "ops", "biz", "meta", "test", "patrol"].filter((b) => existsSync(join(Q, `.claude/skills/tower-${b}/SKILL.md`)));
+  assert("init --preset minimal:只装 dev、meta、patrol 三个板块的 SKILL.md", skills.join() === "dev,meta,patrol", skills.join());
   const cfg = JSON.parse(readFileSync(join(Q, ".claude/belltower.json"), "utf8"));
-  assert("init --preset minimal:belltower.json 的 boards / ranges 只留选中的",
-    cfg.boards.join() === "meta,dev" && Object.keys(cfg.ranges).join() === "meta,dev", JSON.stringify(cfg.boards) + JSON.stringify(cfg.ranges));
+  assert("init --preset minimal:belltower.json 的 boards 只留选中的,ranges 只留有号段的(patrol 没号段)",
+    cfg.boards.join() === "meta,patrol,dev" && Object.keys(cfg.ranges).join() === "meta,dev", JSON.stringify(cfg.boards) + JSON.stringify(cfg.ranges));
   const md = readFileSync(join(Q, "CLAUDE.md"), "utf8");
   assert("init --preset minimal:CLAUDE.md 路由表删了没选的行、「塔」一格填了开塔时机",
-    !md.includes("`tower-plan` |") && /`tower-dev` \| 现在开 \|/.test(md), md.split("\n").filter((l) => l.includes("`tower-")).join(" | "));
+    !md.includes("`tower-plan` |") && /`tower-dev` \| 现在开 \|/.test(md) && /`tower-patrol` \| 跟 meta 一起开/.test(md),
+    md.split("\n").filter((l) => l.includes("`tower-")).join(" | "));
   const pool = readFileSync(join(Q, "docs/session-pool.md"), "utf8");
   assert("init --preset minimal:活表只留选中板块的行",
-    /^\| dev \| `tower-dev`/m.test(pool) && !/^\| plan \| `tower-plan`/m.test(pool));
+    /^\| dev \| `tower-dev`/m.test(pool) && /^\| patrol \| `tower-patrol`/m.test(pool) && !/^\| plan \| `tower-plan`/m.test(pool));
   assert("init --preset minimal:lock 记下预设", JSON.parse(readFileSync(join(Q, ".claude/belltower.lock.json"), "utf8")).preset === "minimal");
   const t = node("scripts/test-hooks.mjs", [], Q);
   const c = counts(t.stdout);
@@ -164,7 +172,7 @@ execFileSync("git", ["init", "-q"], { cwd: P });
   const s0 = snap();
   const nope = add("--add", "nope");
   assert("sync --add 不存在的板块 → 退出 2、列出源里有的板块",
-    nope.status === 2 && ["plan", "product", "dev", "data", "ops", "biz", "meta", "test"].every((b) => nope.stderr.includes(b)), nope.stdout + nope.stderr);
+    nope.status === 2 && ["plan", "product", "dev", "data", "ops", "biz", "meta", "test", "patrol"].every((b) => nope.stderr.includes(b)), nope.stdout + nope.stderr);
   const mixed = add("--add", "test,nope", "--apply");
   assert("sync --add 里有一个不存在 → 整次不做(--apply 也一个字不写)", mixed.status === 2 && snap() === s0, mixed.stdout + mixed.stderr);
   const bare = add("--add");
@@ -226,6 +234,29 @@ execFileSync("git", ["init", "-q"], { cwd: P });
   const cb1 = JSON.parse(readFileSync(join(B, ".claude/belltower.json"), "utf8"));
   assert("sync --add:belltower.json 没有 boards 键 → 不写 boards、提示一句(ranges 照补)",
     !("boards" in cb1) && /没有 boards/.test(nb.stdout) && cb1.ranges?.test === "Q8xx", JSON.stringify(cb1) + " | " + nb.stdout);
+
+  // 巡检塔出来之前装的项目补 patrol:它没有号段,ranges 一个键都不许多
+  const C = tmp("bt-add-");
+  execFileSync("git", ["init", "-q"], { cwd: C });
+  node(join(ROOT, "scripts/belltower-init.mjs"), [C, "--preset", "minimal"]);
+  // 摆成「装的时候还没有巡检塔」的样子:去掉它的 skill、配置里的它、两张表里它那一行
+  rmSync(join(C, ".claude/skills/tower-patrol"), { recursive: true, force: true });
+  const cc = JSON.parse(readFileSync(join(C, ".claude/belltower.json"), "utf8"));
+  cc.boards = cc.boards.filter((b) => b !== "patrol");
+  if (cc.ranges) delete cc.ranges.patrol;   // 本来就不该有;万一有,删掉才算「装的时候没有它」
+  writeFileSync(join(C, ".claude/belltower.json"), JSON.stringify(cc, null, 2) + "\n");
+  for (const f of ["CLAUDE.md", "docs/session-pool.md"]) {
+    writeFileSync(join(C, f), readFileSync(join(C, f), "utf8").split("\n").filter((l) => !l.includes("`tower-patrol` |")).join("\n"));
+  }
+  const pr = node("scripts/belltower-sync.mjs", ["--source", ROOT, "--add", "patrol", "--apply"], C);
+  const cc1 = JSON.parse(readFileSync(join(C, ".claude/belltower.json"), "utf8"));
+  assert("sync --add patrol:装上 tower-patrol/SKILL.md,boards 末尾多了 patrol",
+    pr.status === 0 && existsSync(join(C, ".claude/skills/tower-patrol/SKILL.md")) &&
+    JSON.stringify(cc1.boards) === JSON.stringify([...cc.boards, "patrol"]), pr.stdout + pr.stderr);
+  assert("sync --add patrol:ranges 原样(巡检塔没有号段,不补)", JSON.stringify(cc1.ranges) === JSON.stringify(cc.ranges), JSON.stringify(cc1.ranges));
+  assert("sync --add patrol:路由表、活表各补回 patrol 那一行",
+    readFileSync(join(C, "CLAUDE.md"), "utf8").includes("| `tower-patrol` |") &&
+    /^\| patrol \| `tower-patrol` \|/m.test(readFileSync(join(C, "docs/session-pool.md"), "utf8")), pr.stdout);
 }
 
 // ── 4. scan-public ──────────────────────────────────────────────────────

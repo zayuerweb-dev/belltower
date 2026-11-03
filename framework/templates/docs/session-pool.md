@@ -10,6 +10,7 @@
 
 > **行格式别改**:`| <板块> | \`tower-<板块>\` | …`。开局 hook 靠这个格式 + 本行里的会话 ID 认出「你是哪个塔」。
 > 板块清单来自 `.claude/belltower.json` 的 `boards`;增删板块时这里同步增删行。
+> 装好的项目补开一个板块用 `node scripts/belltower-sync.mjs --add <板块>`,这张表的行它会一起补上(先预演,加 `--apply` 才写)。
 > 会话 ID 一栏写 `session_…` 的 ID(可附一句开塔时刻、分支);塔被重开后**换成新 ID**(按门铃前先查这里)。
 
 | 塔 | 板块 skill | 形态 | 会话 ID / 链接 | 状态 |
@@ -22,16 +23,21 @@
 | biz | `tower-biz` | 云 | ⬜ 待开 | |
 | meta | `tower-meta` | 云 | ⬜ 待开 | |
 | test | `tower-test` | 云 | ⬜ 待开 | |
+| patrol | `tower-patrol` | 云 | ⬜ 待开 | |
 
-**开塔口令**(用户粘贴,一塔一行,把 `plan` 换成对应板块):
+**开塔口令**(用户粘贴,一塔一行,把 `plan` 换成对应板块;巡检塔那行的「任务=」不一样,见 `tower.md`「开塔口令」):
 
 ```
 板块=plan 任务=常驻讨论台,按 .claude/skills/tower-meta/references/tower.md 开局
 ```
 
-> 由 meta 代开(`create_session`)时:`source_url` = 本仓库、**`source_revision: "main"` 必传**(不传的话塔在桌面 App 侧栏里落进「Other」,
-> 不进项目组),`title` = 塔名,`tags: ["tower", <板块>]`,**不带 `worker`**
-> (每日清理的第一条判据就认这个标),`prompt` = 上面那行口令。
+> **由巡检塔代开**(`create_session`)—— 塔要由不会被重开的会话来开,见 `tower.md`「谁来开塔:巡检塔是根」:
+> `source_url` = 本仓库、**`source_revision: "main"` 必传**(不传的话塔在桌面 App 侧栏里落进「Other」,不进项目组),
+> `title` = 「<项目>/<板块>」,`tags: ["tower", <板块>]`,**不带 `worker`**(每日巡检归档工人时靠这个标认塔),
+> `prompt` 只写 `/effort max`,等新会话 `IDLE` 再用门铃送上面那行口令(`tower.md`「每月深度重开」开新会话、送口令那两步)。
+>
+> **巡检塔(patrol)自己例外,不由别的塔代开**:用户在侧栏亲手开(顶层会话),起名「<项目>/patrol」,补 `tower` / `patrol` 两个标。
+> 它是开塔的根 —— 每月深度重开由它来做,它自己不进深度重开、永远不归档;要全新,让用户在它的窗口里手动 `/clear`。
 
 ---
 

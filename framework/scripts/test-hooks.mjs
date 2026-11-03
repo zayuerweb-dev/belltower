@@ -659,8 +659,8 @@ const start = (dir, sid = "") => runIn(dir, "session-start.mjs", {}, { CLAUDE_CO
   assert("session-start 的时刻是真时刻不是占位串",
     STAMP_SHAPE.test(r.out.split("\n")[0] ?? ""), r.out.slice(0, 60));
   assert("session-start 提示声明板块", /板块=\?/.test(r.out));
-  // ★ 板块清单是默认的八个。一板块一条,变异:从默认清单里删掉任一个名字,对应那条要红。
-  for (const b of ["plan", "product", "dev", "data", "ops", "biz", "meta", "test"])
+  // ★ 板块清单是默认的九个(期望写死在这儿)。一板块一条,变异:从默认清单里删掉任一个名字,对应那条要红。
+  for (const b of ["plan", "product", "dev", "data", "ops", "biz", "meta", "test", "patrol"])
     assert(`session-start 默认板块清单含 ${b}`,
       new RegExp(`板块=\\?\\([^)]*\\b${b}\\b[^)]*\\)`).test(r.out), r.out.split("\n").find((l) => /板块=/.test(l)));
   assert("session-start 默认提醒敏感数据要确认", /敏感数据默认不进本仓库/.test(r.out));
@@ -703,6 +703,7 @@ const start = (dir, sid = "") => runIn(dir, "session-start.mjs", {}, { CLAUDE_CO
     "| dev | `tower-dev` | 云 | `session_DEV00000000000000002` | 在跑 |",
     "| data | `other-data` | 云 | `session_DATA0000000000000003` | 前缀不对 |",
     "| alpha | `tower-alpha` | 云 | `session_ALPHA000000000000004` | 不在默认板块里 |",
+    "| patrol | `tower-patrol` | 云 | `session_PATROL00000000000006` | 在跑 |",
     "", "| 单号 | 派发塔 | 任务 | 工人会话 | 分支 | 起跑 | 状态 |", "|---|---|---|---|---|---|---|",
     "| Q301 | dev | 某某 | `session_WORKER00000000000005` | x | x | 在跑 |", ""].join("\n");
   const d = sandbox();
@@ -714,6 +715,21 @@ const start = (dir, sid = "") => runIn(dir, "session-start.mjs", {}, { CLAUDE_CO
     assert(`session-start 对 ${board} 塔提醒成品活派工人`, /成品活派工人/.test(r.out));
   }
   assert("session-start 报默认号段(dev → Q3xx)", /本塔号段:Q3xx/.test(start(d, "cse_DEV00000000000000002").out));
+  // ★ 塔的本分按塔念(红绿成对):巡检塔不派工人,念「成品活派工人」会把它带歪;别的塔照旧念那套。
+  //   期望值写死在这儿(不读 lib/config.mjs 的 DUTY)。变异:dutyOf 恒返回 default →「念巡检的本分」「不念成品活派工人」两条要红。
+  {
+    const p = start(d, "cse_PATROL00000000000006");
+    const duty = p.out.split("\n").find((l) => /本分/.test(l)) ?? "(没有「本分」那行)";
+    assert("session-start 认得出自己是 patrol 塔(默认板块清单里有它)", p.out.includes("你是 **patrol 塔**"),
+      p.out.split("\n").find((l) => /你是/.test(l)) ?? "(没有「你是」那行)");
+    assert("session-start 对巡检塔念巡检的本分(定期的活、不派工人、指向 tower-patrol)",
+      duty.includes("巡检塔的本分") && duty.includes("不派工人") && duty.includes("不定规矩") && duty.includes(".claude/skills/tower-patrol/SKILL.md"), duty);
+    assert("session-start 对巡检塔不念「成品活派工人」", !/成品活派工人/.test(p.out), duty);
+    assert("session-start 巡检塔没有号段 → 不打「本塔号段」", !/本塔号段/.test(p.out), p.out.split("\n").find((l) => /号段/.test(l)));
+    const v = start(d, "cse_DEV00000000000000002").out;
+    assert("session-start 对 dev 塔照旧念「讨论 → 定 → 派工人 → 收活」,不念巡检的",
+      /塔的本分:讨论 → 定 → 派工人 → 收活/.test(v) && !/巡检塔的本分/.test(v), v.split("\n").find((l) => /本分/.test(l)));
+  }
   for (const [label, v] of [
     ["活表里没有的会话 ID", "cse_NOTREAL00000000000"],
     ["没有会话 ID(本机 / 测试)", ""],

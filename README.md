@@ -34,9 +34,9 @@ Every rule here comes with the lesson that produced it (`docs/principles.md`). E
 | **Doorbell** | A trigger bound to another session. Firing it wakes that session within seconds, across repos too (same account). The message only says "go read the ledger"; the details live in git. |
 | **Ledger** | Four markdown files on `main`: `docs/BACKLOG.md`, `docs/journal.md`, `docs/session-pool.md` and `docs/gate-log.md`. `scripts/ledger-push.mjs` pushes them straight to `main`, and falls back to a PR when branch protection blocks the push. |
 | **Gates** | Claude Code hooks (`.claude/hooks/`) that stop the known failure modes. Examples: sensitive data copied into the repo, a tower creating a task no user asked for, a "merged" claim not found on `main`, a ledger left on a branch, a context past its budget. Every gate fails open. |
-| **Routines** | Prompts for a daily worker cleanup, a weekly deep restart, and a 10-minute check-in after dispatching (`docs/routines.md`). |
+| **Routines** | Prompts for the patrol tower's daily patrol and monthly deep restart, and a 10-minute check-in after dispatching (`docs/routines.md`). |
 
-### The eight towers
+### The nine towers
 
 Each tower is one skill file, `.claude/skills/tower-<board>/SKILL.md` (templates in `framework/.claude/skills/`). The file says what the board owns, what it doesn't, and what it must ask the user. A board can exist as a skill without a running tower. Open a tower only when there is material and ongoing discussion.
 
@@ -50,19 +50,22 @@ Each tower is one skill file, `.claude/skills/tower-<board>/SKILL.md` (templates
 | `ops` | Running *our* product in production: deploys, backup and restore drills, monitoring, secrets, cutover |
 | `biz` | Sales, customer success, contracts and billing, company affairs |
 | `meta` | The session machine itself: context economy, dispatch, the ledger, gates, tower protocol, toolboxes |
+| `patrol` | Scheduled work: archives finished workers and checks last night's scheduled CI every day, sends findings back to the tower that owns them and re-checks, looks at gate false positives on Mondays, runs the monthly deep restart. Makes no rules, dispatches no workers |
+
+Rules belong to `meta`; checking them belongs to `patrol`. The patrol tower is also the root that reopens the others, so it is opened differently: the user opens it by hand in the sidebar (a top-level session, not one that meta creates with `create_session`), names it `<project>/patrol` and gives it the `tower` and `patrol` tags. It never goes through the monthly deep restart and is never archived; for a fresh start, the user runs `/clear` in it.
 
 ### Presets
 
-Not every project needs eight towers. `--preset` installs only the boards a project type needs, and fills in when to open each tower (see `presets.json`):
+Not every project needs every tower. `--preset` installs only the boards a project type needs, and fills in when to open each tower (see `presets.json`):
 
 | Preset | Boards | For |
 |---|---|---|
-| `web-product` | plan · product · biz · meta · dev · data · test · ops | Web product you sell |
-| `web-app` | product · meta · dev · test · ops | Web app for your own use |
-| `devtool` | plan · meta · dev · test | Developer tool or library |
-| `minimal` | meta · dev | Minimal |
+| `web-product` | plan · product · biz · meta · patrol · dev · data · test · ops | Web product you sell |
+| `web-app` | product · meta · patrol · dev · test · ops | Web app for your own use |
+| `devtool` | plan · meta · patrol · dev · test | Developer tool or library |
+| `minimal` | meta · patrol · dev | Minimal |
 
-Boards are listed in the order you usually open them. For `web-product`: plan, product, biz and meta first; dev after the spec review; data alongside dev; test split off from dev once there is real code; ops before the first launch.
+Boards are listed in the order you usually open them. For `web-product`: plan, product, biz and meta first, with patrol alongside meta (the routines are bound to it); dev after the spec review; data alongside dev; test split off from dev once there is real code; ops before the first launch.
 
 ### Context economy
 
@@ -72,7 +75,7 @@ A tower lives for weeks, so what sits in its context is the main cost. The harne
 2. **Six habits** (`tower-meta`): no images in the main session; no full reads of big files (grep a slice); truncate long output; don't re-read; one session, one task; write to disk before compaction.
 3. **Earlier auto-compaction.** The framework `.claude/settings.json` sets `"autoCompactWindow": 300000`. It must be a number: a string like `"150k"` is silently ignored.
 4. **Gate 9** reads the real context size from the transcript and asks the tower to save its state to disk at 70%.
-5. **Weekly deep restart.** Once a week, each busy tower hands off to the ledger, is archived, and reopens fresh. This clears the drift that builds up in compaction summaries.
+5. **Monthly deep restart.** On the 1st of each month, the patrol tower has each busy tower hand off to the ledger, archives it, and reopens it fresh. This clears the drift that builds up in compaction summaries.
 
 What is and isn't proven (details in `docs/platform-facts.md` §3 and `tower.md`):
 - **Tested** (2026-09-24/25):
@@ -85,7 +88,7 @@ What is and isn't proven (details in `docs/platform-facts.md` §3 and `tower.md`
 
 ```bash
 git clone https://github.com/zayuerweb-dev/belltower
-node belltower/scripts/belltower-init.mjs path/to/your-project --preset web-app   # omit --preset for all eight
+node belltower/scripts/belltower-init.mjs path/to/your-project --preset web-app   # omit --preset to install every board
 cd path/to/your-project
 $EDITOR .claude/belltower.json      # repo, codeDirs, sensitivePaths, timezone
 node scripts/test-hooks.mjs         # must be green
@@ -101,8 +104,17 @@ node scripts/belltower-sync.mjs --ref v0.2.0 --apply    # write, then re-run the
 ```
 
 `belltower.manifest.json` splits the files into two groups:
-- **framework** files (hooks, settings, ledger script, tests, tower/dispatch references) are overwritten by sync;
-- **init** files (your `CLAUDE.md`, `belltower.json`, the four ledgers, board skills, frozen list) are copied once and never touched again.
+- **framework** files (hooks, settings, ledger script, tests, tower/dispatch/patrol references) are overwritten by sync;
+- **init** files (your `CLAUDE.md`, `belltower.json`, the four ledgers, board skills, frozen list) are copied once and never touched again, except that `--add` (below) appends a board to them.
+
+To add a board to a project that is already installed (for example the `patrol` tower, if the project predates it), use `--add <board>`:
+
+```bash
+node scripts/belltower-sync.mjs --ref <tag> --add patrol            # dry run
+node scripts/belltower-sync.mjs --ref <tag> --add patrol --apply    # write, then fill in the new placeholders and re-run the tests
+```
+
+It installs the board's skill, appends the board to `boards` (and to `ranges` when the board has a number range; `patrol` has none), and adds the board's row to the routing table in `CLAUDE.md` and to the tower table in `docs/session-pool.md`. A board that is already there is reported and left alone. If the project's copy of `belltower-sync.mjs` is older than `--add`, run a normal sync with `--apply` first (that updates the script itself), then `--add`.
 
 ### Configuration (`.claude/belltower.json`)
 
@@ -111,8 +123,8 @@ node scripts/belltower-sync.mjs --ref v0.2.0 --apply    # write, then re-run the
 | `project` | repo dir name | session-start banner |
 | `repo` | parsed from `origin` | ledger-push PR hint |
 | `codeDirs` / `codeExt` | `["src"]` / py ts tsx js jsx sql | code count at session start; gate 6 (tests before stop); gate 11 (code PR) |
-| `boards` | the eight above, or the preset's | identity check (session ID ↔ pool row `tower-<board>`) |
-| `ranges` | `Q1xx` … `Q8xx` | shown when a tower is recognized |
+| `boards` | all the boards above, or the preset's | identity check (session ID ↔ pool row `tower-<board>`) |
+| `ranges` | `Q1xx` … `Q8xx` (none for `patrol`: it opens no tasks) | shown when a tower is recognized |
 | `sensitivePaths.bash` / `.edit` | `sensitive/`, `private-data/`, key files | gates 1–3; empty string turns a gate off |
 | `sensitiveReminder` | iron rule 1 | session-start banner |
 | `timezone` | `America/New_York` | every timestamp |
@@ -128,7 +140,7 @@ The protocol docs are written in Chinese:
 - `docs/routines.md`: routine prompts;
 - `docs/testing.md`: tests and mutation checks;
 - `docs/vendor-skills.md`: pulling third-party skills;
-- `framework/.claude/skills/tower-meta/references/`: `tower.md` (how a tower runs) and `dispatch.md` (how to dispatch a worker).
+- `framework/.claude/skills/tower-meta/references/`: `tower.md` (how a tower runs), `dispatch.md` (how to dispatch a worker) and `patrol.md` (the patrol tower's daily routine).
 
 ### Requirements
 
@@ -173,9 +185,9 @@ MIT — see `LICENSE`.
 | **门铃** | 绑在另一个会话上的触发器,按一下几秒内叫醒对方,跨仓库也通(同一账号)。消息只说「去读台账」,细节在 git 里 |
 | **台账** | `main` 上四份 markdown:`docs/BACKLOG.md` · `docs/journal.md` · `docs/session-pool.md` · `docs/gate-log.md`;`scripts/ledger-push.mjs` 直推 `main`,被分支保护挡住时自动转 PR |
 | **闸门** | `.claude/hooks/` 里的 hook,拦已知的坑:敏感数据进库、塔自己立了用户没说过的号、「已合」在 `main` 上查不到、台账停在分支上、上下文超预算……全部 fail-open |
-| **例程** | 每日清理工人、每周深度重开、派工后 10 分钟回查的提示词(`docs/routines.md`) |
+| **例程** | 巡检塔每日巡检、每月深度重开、派工后 10 分钟回查的提示词(`docs/routines.md`) |
 
-### 八个塔
+### 九个塔
 
 每个塔就是一份 skill 文件 `.claude/skills/tower-<板块>/SKILL.md`(模板在 `framework/.claude/skills/`),
 写着这个板块管什么、不管什么、要问用户什么。**板块可以只有 skill 没有塔** —— 有材料、有持续讨论才开塔。
@@ -190,19 +202,22 @@ MIT — see `LICENSE`.
 | `ops` | **我们自己的产品**怎么跑在线上:部署、备份恢复演练、监控、密钥、切换 |
 | `biz` | 销售、客户成功、合同与计费、公司事务 |
 | `meta` | 会话这台机器本身:上下文经济、派发、台账、闸门、塔协议、各塔工具箱 |
+| `patrol` | 定期的活:每天归档跑完的工人、查昨晚定时 CI,查出来的照「归谁」派回那个塔并回查,周一看闸门误伤,每月深度重开;不定规矩、不派工人 |
+
+定规矩归 `meta`,查规矩归 `patrol`。巡检塔还是开塔的根,所以开法不一样:**由用户在侧栏亲手开**(顶层会话,不由 meta 用 `create_session` 代开),起名「<项目>/patrol」、补 `tower` / `patrol` 两个标;它不进每月深度重开、永远不归档,要全新就让用户在它的窗口里手动 `/clear`。
 
 ### 预设
 
-不是每个项目都要八个塔。`--preset` 按项目类型只装用得到的板块,并把每个塔「什么时候开」填好(定义在 `presets.json`):
+不是每个项目都要全部的塔。`--preset` 按项目类型只装用得到的板块,并把每个塔「什么时候开」填好(定义在 `presets.json`):
 
 | 预设 | 板块 | 适合 |
 |---|---|---|
-| `web-product` | plan · product · biz · meta · dev · data · test · ops | 网页产品(要卖) |
-| `web-app` | product · meta · dev · test · ops | 网页应用(自用) |
-| `devtool` | plan · meta · dev · test | 开发工具或库 |
-| `minimal` | meta · dev | 最小 |
+| `web-product` | plan · product · biz · meta · patrol · dev · data · test · ops | 网页产品(要卖) |
+| `web-app` | product · meta · patrol · dev · test · ops | 网页应用(自用) |
+| `devtool` | plan · meta · patrol · dev · test | 开发工具或库 |
+| `minimal` | meta · patrol · dev | 最小 |
 
-板块按通常的开塔顺序排。以 `web-product` 为例:plan、product、biz、meta 先开;规格评审过了开 dev;
+板块按通常的开塔顺序排。以 `web-product` 为例:plan、product、biz、meta 先开,patrol 跟 meta 一起开(例程都绑在它身上);规格评审过了开 dev;
 data 跟着 dev 开;代码量上来后从 dev 拆出 test;第一次上线前开 ops。
 
 ### 上下文经济
@@ -213,7 +228,7 @@ data 跟着 dev 开;代码量上来后从 dev 拆出 test;第一次上线前开 
 2. **六条习惯**(`tower-meta`):图不进主会话 · 大文件不全读(grep 切片)· 长输出必截 · 读过不重读 · 一会话一任务 · 落盘先于压缩。
 3. **提前自动压缩。** 框架的 `.claude/settings.json` 设了 `"autoCompactWindow": 300000`。**必须写数字**,写成字符串 `"150k"` 会被静默忽略。
 4. **闸门9** 从转录里读出真实的上下文用量,到 70% 提醒塔先落盘。
-5. **每周深度重开。** 每周一次,有动静的塔先把手上的事交接进台账,再归档,然后重新开一个。
+5. **每月深度重开。** 每月 1 号由巡检塔做:有动静的塔先把手上的事交接进台账,再归档,然后重新开一个。
    这一步清掉压缩摘要里慢慢攒下的偏差。
 
 哪些证实了、哪些没有(细节见 `docs/platform-facts.md` §3 和 `tower.md`):
@@ -227,7 +242,7 @@ data 跟着 dev 开;代码量上来后从 dev 拆出 test;第一次上线前开 
 
 ```bash
 git clone https://github.com/zayuerweb-dev/belltower
-node belltower/scripts/belltower-init.mjs 你的项目目录 --preset web-app   # 不加 --preset = 八个全装
+node belltower/scripts/belltower-init.mjs 你的项目目录 --preset web-app   # 不加 --preset = 全装
 cd 你的项目目录
 # 改 .claude/belltower.json:仓库名、代码目录、敏感路径、时区
 node scripts/test-hooks.mjs   # 必须全绿
@@ -238,15 +253,26 @@ node scripts/test-hooks.mjs   # 必须全绿
 ### 以后更新
 
 `node scripts/belltower-sync.mjs --ref <版本>` 先预演、加 `--apply` 才写。
-**只覆盖框架文件**,项目自己的东西(CLAUDE.md、配置、四件台账、各板块 SKILL.md、冻结清单)永远不碰。
+**只覆盖框架文件**,项目自己的东西(CLAUDE.md、配置、四件台账、各板块 SKILL.md、冻结清单)不碰 —— 例外只有下面 `--add` 点名补的板块,也只加不改。
 哪些算框架、哪些算项目,见 `belltower.manifest.json`。
+
+已经装好的项目补开一个塔(例如项目装的时候还没有巡检塔 `patrol`),用 `--add <板块>`:
+
+```bash
+node scripts/belltower-sync.mjs --ref <版本> --add patrol            # 预演
+node scripts/belltower-sync.mjs --ref <版本> --add patrol --apply    # 写;写完填好新补进来的「项目填写」,再跑测试
+```
+
+它装上这个板块的 skill,`boards` 末尾加上它(有号段的板块 `ranges` 也补上;`patrol` 没有号段),
+`CLAUDE.md` 路由表、`docs/session-pool.md` 塔表各补一行;已经装过的报「已装」,什么都不改。
+项目里的 `belltower-sync.mjs` 比 `--add` 旧的话,先照常 sync 一次(加 `--apply`,新版 sync 会跟着更新),再 `--add`。
 
 ### 先读哪几份
 
 1. `docs/principles.md` —— 规矩背后的原则,每条带来历
 2. `framework/templates/CLAUDE.md` —— 装进项目后的规矩(七条铁律、台账总线)
 3. `docs/architecture.md` —— 板块怎么分、怎么交接
-4. `framework/.claude/skills/tower-meta/references/tower.md` · `dispatch.md` —— 塔怎么当、工人怎么派
+4. `framework/.claude/skills/tower-meta/references/tower.md` · `dispatch.md` · `patrol.md` —— 塔怎么当、工人怎么派、巡检塔每天做什么
 5. `docs/platform-facts.md` —— 平台实测过什么、没测过什么
 
 ### 测试

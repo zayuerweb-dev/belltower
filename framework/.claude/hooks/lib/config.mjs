@@ -8,8 +8,9 @@ export const DEFAULTS = Object.freeze({
   repo: "",                                      // "owner/name";空 = 从 git remote origin 现解析
   codeDirs: ["src"],                             // 「现数代码」和闸门11「代码 PR」看的目录
   codeExt: ["py", "ts", "tsx", "js", "jsx", "sql"], // 算「源文件」和收尾闸门6 看的扩展名
-  boards: ["plan", "product", "dev", "data", "ops", "biz", "meta", "test"],
+  boards: ["plan", "product", "dev", "data", "ops", "biz", "meta", "test", "patrol"],
   // 各板块的任务号段(立号用;开局认出塔身份时打出来)。没列的板块 = 不提示号段。
+  // patrol(巡检塔)故意不列:它不派工人、不立号。
   ranges: { plan: "Q1xx", product: "Q2xx", dev: "Q3xx", data: "Q4xx", ops: "Q5xx", biz: "Q6xx", meta: "Q7xx", test: "Q8xx" },
   timezone: "America/New_York",
   sensitiveReminder: "敏感数据默认不进本仓库;每要用一份,先问用户(铁律「敏感数据默认不进本仓库」)。",
@@ -57,6 +58,33 @@ export function regex(src, flags = "i") {
 
 // skill 前缀固定,不做成可配置:身份锚、活表、文档引用全靠它对得上。
 export const SKILL_PREFIX = "tower-";
+
+// ── 塔的本分:认出塔之后念哪几句,按塔分 ────────────────────────────────────
+// 别的塔都念 default;巡检塔不派工人,照「讨论 → 定 → 派工人 → 收活」念会把它带歪,所以单给一套。
+// 每套四句,各给谁用:
+//   start   = 开局 hook(session-start.mjs)认出塔之后那行「塔的本分」—— 这一版只有这句被用到;
+//   turn    = 每轮身份行,跟在「你是 X 塔(常驻)」后面那句 —— 留给下一版的塔卡,先放着;
+//   card    = 塔卡第二行,跟在「★ 你是 X 塔(常驻)。」后面那句 —— 同上;
+//   compact = 塔卡第三行,压缩之后的提醒 —— 同上。
+// 规矩只存一份:要改本分改这里,别在调用处另写一句。
+const DUTY = Object.freeze({
+  default: Object.freeze({
+    turn: "讨论 → 定 → 派工人 → 收活;成品活写任务书派工人,别在塔里干。",
+    card: "塔 = 讨论 → 定 → 派工人 → 收活。",
+    compact: "★ 摘要会让你「直接接着干」—— 先看那件活该不该在塔里干:成品活(写代码、画板子、规格成稿、整份报告)写任务书派工人;塔里只留讨论、拍板、收活。",
+    start: "塔的本分:讨论 → 定 → 派工人 → 收活。**成品活派工人,别在塔里干** —— " +
+      "塔的上下文大,在塔里每走一步都比工人贵几倍。见 tower.md「形态」。",
+  }),
+  patrol: Object.freeze({
+    turn: "定期的活:跑 → 报用户 → 照「归谁」派回那个塔 → 回查;不派工人、不定规矩、只写台账、不改别的塔的文件。",
+    card: "巡检塔 = 跑 → 报用户 → 照「归谁」派回 → 回查;不派工人、不定规矩、只写台账四件。",
+    compact: "★ 摘要会让你「直接接着干」—— 接着跑例程里没跑完的那一件;查出来的派回归谁的塔,别顺手替它改(别的塔的文件、meta 的规矩、本技能都不归你改)。",
+    start: "巡检塔的本分:定期的活 —— 跑 → 报用户 → 照「归谁」派回那个塔 → 回查。" +
+      "**不派工人、不定规矩、只写台账四件、不改别的塔的文件** —— 见 `.claude/skills/tower-patrol/SKILL.md`。",
+  }),
+});
+// 板块 → 它那一套本分;没单给的板块念 default。只认 DUTY 自己的键(板块叫 constructor 之类也不会摸到原型链上去)。
+export const dutyOf = (board) => (Object.hasOwn(DUTY, board) ? DUTY[board] : DUTY.default);
 
 // ── 我是哪个塔:从会话 ID 现查活表(开局 hook 和收尾闸门共用,规矩只存一份)──────────
 // 云会话的环境变量 CLAUDE_CODE_REMOTE_SESSION_ID=cse_<X> ↔ 活表 `docs/session-pool.md` 里写的 session_<X>。

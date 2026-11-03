@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { basename, resolve } from "node:path";
 import { stamp } from "./lib/now.mjs";
-import { config, whoAmI } from "./lib/config.mjs";
+import { config, whoAmI, dutyOf } from "./lib/config.mjs";
 
 const cfg = config();
 const out = [];
@@ -28,8 +28,8 @@ try {
     const { board } = whoAmI();
     if (board) {
       out.push(`★ 你是 **${board} 塔**(常驻)—— 会话 ID 对上活表那一行,现查的,不是凭记忆。`);
-      out.push("  塔的本分:讨论 → 定 → 派工人 → 收活。**成品活派工人,别在塔里干** —— " +
-        "塔的上下文大,在塔里每走一步都比工人贵几倍。见 tower.md「形态」。");
+      // 本分按塔念:巡检塔不派工人,念「成品活派工人」那套会把它带歪(哪个塔念哪套见 lib/config.mjs 的 dutyOf)
+      out.push(`  ${dutyOf(board).start}`);
       if (cfg.ranges[board]) out.push(`  本塔号段:${cfg.ranges[board]}(立号前要有用户那句「做这个」落在台账上)。`);
     }
   }
