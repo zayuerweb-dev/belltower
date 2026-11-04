@@ -136,18 +136,23 @@ export function parseBells(flagText) {
 // 报错的不算(往已归档的会话建门铃当场报错,platform-facts §1.1);转录里只有调用、没有结果的也不算 ——
 // 「按过」要有凭据。用户拒绝、钩子拦、中断,平台都会写一条报错的结果,剩下没结果的是转录缺了那条;
 // 当它按过,闸门14 就没凭据放行了(装了框架的项目审查出来的)。①② 都照这条。
+// 但没结果的 create_trigger 照样更新「最近想绑谁」(last):它自己不算按过、也不进 id 对照表,
+// 只给后面回执认不出、id 也对不上的那次 fire 兜底。跳过它的话,那次 fire 会落回更早一个门铃绑的会话,
+// 记到旧目标头上(v0.3.2 引入的倒退,装了框架的项目审查发现)。
 export function bellsOf(calls, flagText = "") {
   const out = [], made = new Map();
   let last = "";
   for (const c of calls ?? []) {
-    if (c.isError || c.result === null) continue;
+    if (c.isError) continue;
     if (isTool(c.name, "create_trigger") && c.input?.persistent_session_id) {
       const psid = String(c.input.persistent_session_id);
+      last = psid;                       // 没结果也记下「想绑谁」,给后面认不出的 fire 兜底
+      if (c.result === null) continue;   // 没结果:不算按过,也不进 made
       const id = createdId(c.result);
       if (id) made.set(id, psid);
-      last = psid;
       if (c.input.run_once_at || c.input.cron_expression) out.push({ ts: c.ts, sid: bareSid(psid) });
     } else if (isTool(c.name, "fire_trigger")) {
+      if (c.result === null) continue;   // 没结果的 fire 不算按过
       const psid = receiptOf(c.result)?.want ?? made.get(String(c.input?.trigger_id ?? "")) ?? last;
       out.push({ ts: c.ts, sid: bareSid(psid) });
     }

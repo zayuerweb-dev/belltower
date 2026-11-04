@@ -1,12 +1,13 @@
 {
   "name": "belltower",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "upstream": "https://github.com/zayuerweb-dev/belltower",
   "_comment": "framework = 框架文件,belltower-sync 会覆盖更新;init = 起步模板,只在 belltower-init 时拷一次、之后归项目,sync 永远不碰。路径:src 相对本仓库根,dst 相对项目根。",
   "framework": [
     { "src": "framework/.claude/hooks/lib/config.mjs", "dst": ".claude/hooks/lib/config.mjs" },
     { "src": "framework/.claude/hooks/lib/now.mjs", "dst": ".claude/hooks/lib/now.mjs" },
     { "src": "framework/.claude/hooks/lib/doorbell.mjs", "dst": ".claude/hooks/lib/doorbell.mjs" },
+    { "src": "framework/.claude/hooks/lib/brake.mjs", "dst": ".claude/hooks/lib/brake.mjs" },
     { "src": "framework/.claude/hooks/now.mjs", "dst": ".claude/hooks/now.mjs" },
     { "src": "framework/.claude/hooks/session-start.mjs", "dst": ".claude/hooks/session-start.mjs" },
     { "src": "framework/.claude/hooks/lib/tower-card.mjs", "dst": ".claude/hooks/lib/tower-card.mjs" },
@@ -21,6 +22,7 @@
     { "src": "framework/.claude/skills/tower-meta/references/dispatch.md", "dst": ".claude/skills/tower-meta/references/dispatch.md" },
     { "src": "framework/.claude/skills/tower-meta/references/patrol.md", "dst": ".claude/skills/tower-meta/references/patrol.md" },
     { "src": "framework/scripts/ledger-push.mjs", "dst": "scripts/ledger-push.mjs" },
+    { "src": "framework/scripts/brake.mjs", "dst": "scripts/brake.mjs" },
     { "src": "framework/scripts/lib/direct-push.mjs", "dst": "scripts/lib/direct-push.mjs" },
     { "src": "framework/scripts/test-hooks.mjs", "dst": "scripts/test-hooks.mjs" },
     { "src": "framework/scripts/test-ledger-push.mjs", "dst": "scripts/test-ledger-push.mjs" },

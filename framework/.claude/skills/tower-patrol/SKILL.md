@@ -14,7 +14,7 @@ description: 巡检板块——定期的活全归它:每天归档跑完的工人
 
 | 多久一次 | 做什么 | 做法在哪 |
 |---|---|---|
-| 每天 | 归档跑完的工人 · 报昨晚定时 CI · 回查派回去的事 | `.claude/skills/tower-meta/references/patrol.md` |
+| 每天 | 归档跑完的工人 · 报昨晚定时 CI · 刹车两查(〔攒批〕超 48 小时派回 dev、过去 24 小时超上限的报用户)· 回查派回去的事 | `.claude/skills/tower-meta/references/patrol.md` |
 | 每周一 | 每天那几件之外,多看三件:「又说一遍」「又答一遍」两个数(用户把说过 / 定过的事又说、又答了几遍),一周的闸门误伤(`docs/gate-log.md`),冤的告知 meta | 同上 |
 | 每月 1 号 | 深度重开各塔 | **照 `.claude/skills/tower-meta/references/tower.md`「每月深度重开」一节**,这里不抄 |
 

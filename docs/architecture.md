@@ -281,7 +281,7 @@
 | `.claude/skills/tower-meta/references/tower.md` | 塔协议:开局动作、平台事实、每月深度重开 |
 | `.claude/skills/tower-meta/references/dispatch.md` | 派发配方:立号、任务书模板、收活、归档、回查、转授权 |
 | `.claude/skills/tower-meta/references/patrol.md` | 巡检塔的每日做法:归档工人、查定时 CI、派回与回查、早报 |
-| `.claude/hooks/` | 闸门:bash 1–4、edit 1–6、mcp 10–11、13、16、stop 6/7/8/9/12/14/15(14 留言要按门铃 · 15 门铃没送到 · 16 一个门铃只按一次;共用件 `lib/doorbell.mjs`);开局 hook 认身份、现数代码;塔卡 hook 在开局 / 压缩 / 恢复后给塔现贴身份、本分和本塔技能全文(封顶一万字),每轮 hook 念时刻、塔再念一句身份 |
+| `.claude/hooks/` | 闸门:bash 1–4、edit 1–6、mcp 10–11、13、16、17、stop 6/7/8/9/12/14/15(14 留言要按门铃 · 15 门铃没送到 · 16 一个门铃只按一次;共用件 `lib/doorbell.mjs` · 17 派工刹车:同一家封顶几轮、〔待用户〕先等用户,判据 `lib/brake.mjs`,现数 `scripts/brake.mjs`);开局 hook 认身份、现数代码;塔卡 hook 在开局 / 压缩 / 恢复后给塔现贴身份、本分和本塔技能全文(封顶一万字),每轮 hook 念时刻、塔再念一句身份 |
 | `scripts/ledger-push.mjs` | 台账上 `main`(分支保护后自动转 PR 模式) |
 | `scripts/test-hooks.mjs` | 闸门回归 + 变异验证 |
 | `.claude/belltower.json` | 项目配置:显示名、仓库、代码目录、板块清单、时区、敏感路径正则 |

@@ -23,6 +23,8 @@ export const DEFAULTS = Object.freeze({
   // 台账四件以外、也许直推 main 的文件(ledger-push 和闸门12 都认,清单见 scripts/lib/direct-push.mjs)。
   // 默认空 = 口子只有台账四件。**要开口子先问用户**,问过了把文件路径写进来。
   directPush: [],
+  // 刹车(闸门17):同一家号最多合几轮,再派要用户点头(dispatch.md「刹车」)。0 = 关掉轮次封顶;不是非负整数 = 用默认值。
+  brakeRounds: 3,
 });
 
 // directPush 的一项:仓库内的相对路径,一项一个文件,写成 git 自己打印的样子 ——
@@ -62,6 +64,7 @@ export function config() {
       edit: str(sp.edit, DEFAULTS.sensitivePaths.edit),
     },
     directPush: Array.isArray(raw.directPush) ? [...new Set(raw.directPush.filter(repoFile))] : [],
+    brakeRounds: Number.isInteger(raw.brakeRounds) && raw.brakeRounds >= 0 ? raw.brakeRounds : DEFAULTS.brakeRounds,
   };
   if (!cached.boards.length) cached.boards = [...DEFAULTS.boards];
   // directPush 不收代码:codeDirs 底下的、codeExt 扩展名的一律丢掉。

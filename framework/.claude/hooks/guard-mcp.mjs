@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // 管几个 MCP 工具 —— 它们是别的闸门够不着的口子(.claude/settings.json 里 grep guard-mcp 看挂在哪):
-//   PreToolUse:create_session(闸门13、10)· merge_pull_request(闸门11)· pull_request_read(记账)· fire_trigger(闸门16);
+//   PreToolUse:create_session(闸门13、10、17)· merge_pull_request(闸门11)· pull_request_read(记账)· fire_trigger(闸门16);
 //   PostToolUse:create_pull_request · fire_trigger(只记账:开过哪个 PR、门铃回执 —— 回执给 guard-stop 的闸门15 核送达)。
 // stdin 解析失败一律放行(fail-open)。除闸门11 的「自己开的代码 PR 不许自己合」,都是**软闸,各拦一次**:
 // 拦的是「你确认过了吗」,不是「不许干」。
 import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { config } from "./lib/config.mjs";
+import { config, whoAmI } from "./lib/config.mjs";
 
 let input;
 try { input = JSON.parse(readFileSync(0, "utf8")); } catch { process.exit(0); }
@@ -153,6 +153,79 @@ if (/create_session$/.test(tool) && !has("dispatch-reminded")) {
        `  两单都真做出了东西、真花了钱 —— 做得对不算数,没人要才是问题。\n\n` +
        `  两条都过了,原样再来一次就放行(本闸只拦这一次)。\n` +
        `  ★ 顺手:派完同一轮排一个 10 分钟回查(dispatch.md §10),别等用户来问。`);
+}
+
+// ── 闸门17:派工刹车 —— 同一家号封顶几轮 · 任务书带〔待用户〕先等用户 ──────────────────
+// 出处:装了框架的项目里,一夜之间 test 的门铃响了几十次、同一件东西一夜合了 8 轮 —— 环里没有「停」。
+//   规矩三条(dispatch.md「刹车」):轻缺陷攒批 · 同一家封顶 · 推断会改行为的等用户。这道闸守后两条的「派」那一刻。
+// 判据(共用件 lib/brake.mjs):
+//   这次派的号 = 任务书第一个 `# ` 行(没有就用 title)里,优先取派工塔自己号段的号,认不出塔就取第一个;
+//   轮次 = 这一家(基号相同 + 任务书「返工自 Qnnn」并进来的家)在 origin/main 已合的不同号 ∪ 这次的号;
+//   (a) 轮次 > 上限(配置 brakeRounds,默认 3;0 = 关掉这一半),任务书没有查得到的点头行 → 软拦,每家一次(旗标 brake-rounds:<基号>);
+//   (b) 任务书带〔待用户〕,没有查得到的点头行 → 软拦一次(旗标 brake-pending-user)。
+//   点头行 = `用户点头:「原话」(日期 时刻,哪个塔)`,原话要在 origin/main 的 BACKLOG / journal 里查得到。
+// 只读 `git show / git log origin/main`,不 fetch(钩子里不碰网络);(a)(b) 各自 try,任何一步出错放行(fail-open)。
+// ⚠ 已知的洞:点头行只证明「台账里有这句话」,证明不了是用户说的 —— 塔自己往台账写一句再引用,闸就过了。
+//   〔待用户〕也一样:product 不标,闸就看不见。
+if (/create_session$/.test(tool)) {
+  try {
+    const bk = await import("./lib/brake.mjs");
+    const cfg = config();
+    const prompt = String(input.tool_input?.prompt ?? "");
+    const git = (...a) => execFileSync("git", a, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 << 20 });
+    const show = (f) => { try { return git("show", `origin/main:${f}`); } catch { return ""; } };
+    let ledger = null;
+    const ledgerText = () => {
+      if (ledger === null) {
+        git("rev-parse", "--verify", "-q", "origin/main");          // 没有 origin/main → 抛,调用方放行
+        ledger = ["docs/BACKLOG.md", "docs/journal.md"].map(show).join("\n");
+      }
+      return ledger;
+    };
+    const nods = bk.nodQuotes(prompt);
+    const nodOk = () => nods.some((q) => bk.quoteInLedger(q, ledgerText()));
+    const nodNote = () => nods.length
+      ? `\n  ★ 任务书里有「用户点头:」,但**台账里没找到这句**(${nods.map((q) => `「${q}」`).join(" ")})—— 先让原话落进 origin/main 的 BACKLOG / journal。\n`
+      : "";
+    const nodHow = `      用户点头:「原话」(日期 时刻,哪个塔)\n`;
+
+    // (a) 同一家封顶
+    const cap = cfg.brakeRounds;
+    if (cap > 0) try {
+      const title = prompt.split("\n").find((l) => /^# /.test(l)) ?? String(input.tool_input?.title ?? "");
+      let board = null;
+      try { board = whoAmI().board; } catch {}
+      const q = bk.firstQ(title, bk.rangeDigit(board, cfg.ranges));
+      if (q) {
+        const { family, merged, round } = bk.familyRounds(q.no, bk.reworkBases(prompt), bk.deliveries(git(...bk.LOG_ARGS, "origin/main")));
+        const key = `brake-rounds:${q.base}`;
+        if (round > cap && !has(key) && !nodOk()) {
+          remember(key);
+          deny(`闸门17 派工刹车:${q.no} 是 ${family.join(" + ")} 这一家的**第 ${round} 轮**(上限 ${cap},再派要用户点头)。已合进 main 的:\n` +
+               merged.map((d) => `  · ${d.q} · #${d.pr} · ${bk.fmtTime(d.at, cfg.timezone)}`).join("\n") + "\n" + nodNote() +
+               `\n  规矩:同一件东西改到第 ${cap} 轮就停下等用户看(dispatch.md「刹车」)—— 环里得有「停」。\n` +
+               `  先写给用户:还剩什么、这几轮花了多少(各工人会话 get_session 的 external_metadata.usage.cost_usd 加起来)、选项、推荐。\n\n` +
+               `  放行:用户点了头、原话落进台账之后,任务书加一行\n` + nodHow +
+               `  一次点头管一轮。**不是返工、只是号撞了家**,就原样再来一次(每家拦一次)。\n` +
+               `  现数:node scripts/brake.mjs rounds ${q.no}`);
+        }
+      }
+    } catch {}
+
+    // (b) 〔待用户〕:不用读台账就判得了(没点头行时);有点头行、台账读不到 → 放行(fail-open)
+    try {
+      if (bk.hasMark(prompt, bk.MARK_USER) && !has("brake-pending-user")) {
+        let nodPass = false;
+        try { nodPass = nodOk(); } catch { nodPass = nods.length > 0; }
+        if (!nodPass) {
+          remember("brake-pending-user");
+          deny(`闸门17 派工刹车:任务书里有〔待用户〕—— product 标了「推断会改行为,等用户点头」的东西,dev 不开工(dispatch.md「刹车」)。\n` + nodNote() +
+               `  放行:用户点了头、原话落进台账之后,任务书加一行\n` + nodHow +
+               `  任务书只是**提到**这个记号(不是在派那件活),原样再来一次(只拦这一次)。`);
+        }
+      }
+    } catch {}
+  } catch {}
 }
 
 // ── 闸门11 v2:代码 PR 不许自己开自己合(2026-09-10 用户定)──────────────

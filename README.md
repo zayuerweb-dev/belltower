@@ -33,7 +33,7 @@ Every rule here comes with the lesson that produced it (`docs/principles.md`). E
 | **Workers** | Short-lived sessions a tower spawns for one numbered task. They push a branch or open a PR, and are archived once done. |
 | **Doorbell** | A trigger bound to another session. Firing it wakes that session within seconds, across repos too (same account). The message only says "go read the ledger"; the details live in git. |
 | **Ledger** | Four markdown files on `main`: `docs/BACKLOG.md`, `docs/journal.md`, `docs/session-pool.md` and `docs/gate-log.md`. `scripts/ledger-push.mjs` pushes them straight to `main`, and falls back to a PR when branch protection blocks the push. |
-| **Gates** | Claude Code hooks (`.claude/hooks/`) that stop the known failure modes. Examples: sensitive data copied into the repo, a tower creating a task no user asked for, a "merged" claim not found on `main`, a ledger left on a branch, a context past its budget, a note left for another tower without ringing its doorbell, the same doorbell fired twice. After compaction, a SessionStart hook re-posts the tower's identity and its full skill (the "tower card"). Every gate fails open. |
+| **Gates** | Claude Code hooks (`.claude/hooks/`) that stop the known failure modes. Examples: sensitive data copied into the repo, a tower creating a task no user asked for, a "merged" claim not found on `main`, a ledger left on a branch, a context past its budget, a note left for another tower without ringing its doorbell, the same doorbell fired twice, a fourth round of fixes on the same task dispatched without the user's nod. After compaction, a SessionStart hook re-posts the tower's identity and its full skill (the "tower card"). Every gate fails open. |
 | **Routines** | Prompts for the patrol tower's daily patrol and monthly deep restart, and a 10-minute check-in after dispatching (`docs/routines.md`). |
 
 ### The nine towers
@@ -129,6 +129,7 @@ It installs the board's skill, appends the board to `boards` (and to `ranges` wh
 | `sensitiveReminder` | iron rule 1 | session-start banner |
 | `timezone` | `America/New_York` | every timestamp |
 | `directPush` | `[]` (only the four ledgers) | ledger-push and gate 12: extra files that may go straight to `main`. Ask the user first; one repo-relative file per entry, no wildcards, no `..` |
+| `brakeRounds` | `3` | gate 17 (dispatch brake): how many rounds one task family may merge before the next dispatch needs the user's nod; `0` turns the round cap off |
 
 The skill prefix is fixed at `tower-`.
 
@@ -185,7 +186,7 @@ MIT — see `LICENSE`.
 | **工人** | 塔为一个编号任务开的短命会话:推分支或开 PR,干完归档 |
 | **门铃** | 绑在另一个会话上的触发器,按一下几秒内叫醒对方,跨仓库也通(同一账号)。消息只说「去读台账」,细节在 git 里 |
 | **台账** | `main` 上四份 markdown:`docs/BACKLOG.md` · `docs/journal.md` · `docs/session-pool.md` · `docs/gate-log.md`;`scripts/ledger-push.mjs` 直推 `main`,被分支保护挡住时自动转 PR |
-| **闸门** | `.claude/hooks/` 里的 hook,拦已知的坑:敏感数据进库、塔自己立了用户没说过的号、「已合」在 `main` 上查不到、台账停在分支上、上下文超预算、给别的塔留了言没按门铃、同一个门铃按两次……全部 fail-open。压缩之后另有开局 hook 给塔重贴身份和本塔技能全文(「塔卡」) |
+| **闸门** | `.claude/hooks/` 里的 hook,拦已知的坑:敏感数据进库、塔自己立了用户没说过的号、「已合」在 `main` 上查不到、台账停在分支上、上下文超预算、给别的塔留了言没按门铃、同一个门铃按两次、同一件活改到第 4 轮还没等用户点头就又派……全部 fail-open。压缩之后另有开局 hook 给塔重贴身份和本塔技能全文(「塔卡」) |
 | **例程** | 巡检塔每日巡检、每月深度重开、派工后 10 分钟回查的提示词(`docs/routines.md`) |
 
 ### 九个塔

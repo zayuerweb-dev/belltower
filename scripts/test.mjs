@@ -448,6 +448,32 @@ execFileSync("git", ["init", "-q"], { cwd: P });
     writeFileSync(cfgPath, cfg0);
   }
 
+  // 6h. 巡检「刹车两查」:命令从 patrol.md 的代码块里原样抠出来,在装好的项目里拿样例台账跑(假时钟钉住「现在」)
+  {
+    const md = readFileSync(join(ROOT, "framework/.claude/skills/tower-meta/references/patrol.md"), "utf8");
+    const cmdA = blocksOf(md).filter((b) => b.includes("brake.mjs batch"));
+    const cmdB = blocksOf(md).filter((b) => b.includes("brake.mjs over"));
+    assert("patrol.md 里刹车两查 (a)(b) 的命令各恰好一块", cmdA.length === 1 && cmdB.length === 1, `(a) ${cmdA.length} 块,(b) ${cmdB.length} 块`);
+    const L = String.fromCharCode(0x3014), R = String.fromCharCode(0x3015);
+    const backlog0 = readFileSync(join(F, "docs/BACKLOG.md"), "utf8");
+    put(F, "docs/BACKLOG.md", backlog0 + [
+      "", `- 2031-03-07 09:00 · test → dev ${L}攒批${R} · 表头没对齐`,
+      `- 2031-03-09 09:00 · test → dev ${L}攒批${R} · 刚记的一条`,
+      `- 2031-03-06 09:00 · test → dev ${L}攒批${R} · 修过的一条`, `  ${L}已修 Q399${R}`, ""].join("\n"));
+    const at = (when, msg) => execFileSync("git", ["commit", "--allow-empty", "-qm", msg], { cwd: F, stdio: "ignore",
+      env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when } });
+    git(F, "add", "-A"); at("2031-03-01T00:00:00Z", "样例攒批");
+    for (const [i, x] of ["", "b", "c", "d"].entries()) at(`2031-03-09T1${i}:00:00Z`, `Q301${x} · 某活 (#${i + 1})`);
+    git(F, "push", "-q", "origin", "main");
+    const NOW = "2031-03-10T02:00:00Z";   // 美东 3/9 22:00(3/9 当天切夏令时,13:00Z 是美东 09:00)
+    const run = (cmd) => spawnSync("bash", ["-c", cmd ?? "exit 1"], { cwd: F, env: clockEnv(NOW), encoding: "utf8" });
+    const a = run(cmdA[0]), b = run(cmdB[0]);
+    assert("巡检刹车 (a):〔攒批〕开了超 48 小时的只列那一条(刚记的、已修的不列)",
+      a.status === 0 && a.stdout.startsWith("2031-03-07 09:00 · test → dev · 表头没对齐 · 开了 60 小时\n— 开着的〔攒批〕1 条"), a.stdout + a.stderr);
+    assert("巡检刹车 (b):过去 24 小时合进、超过上限的只有 Q301d(第 4 轮)",
+      b.status === 0 && /^Q301d · #4 · 合进 2031-03-09 09:00 · Q301 这一家第 4 轮\(上限 3\)\n— 过去 24 小时合进的交付里,超过上限的 1 笔/.test(b.stdout), b.stdout + b.stderr);
+  }
+
   // 6d. 外来 skill 默认不进技能清单:拷进来的 SKILL.md 补 disable-model-invocation: true;--keep-in-list 不补
   {
     const U = tmp("bt-kwp-");

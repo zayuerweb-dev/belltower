@@ -139,8 +139,8 @@ SessionStart 的**塔卡**(`.claude/hooks/tower-card.mjs`)在开局 / 压缩 / �
 
 ## 闸门维护(先硬后调)
 
-实现 = `.claude/hooks/` 五个脚本 + `scripts/test-hooks.mjs`。闸门编号:bash 1–4 · edit 1–6 · mcp 10–11、13、16 · stop 6/7/8/9/12/14/15
-(闸门14 的记账半在 edit,门铃三道的共用件在 `.claude/hooks/lib/doorbell.mjs`)。
+实现 = `.claude/hooks/` 五个脚本 + `scripts/test-hooks.mjs`。闸门编号:bash 1–4 · edit 1–6 · mcp 10–11、13、16、17 · stop 6/7/8/9/12/14/15
+(闸门14 的记账半在 edit,门铃三道的共用件在 `.claude/hooks/lib/doorbell.mjs`;闸门17 派工刹车的判据在 `.claude/hooks/lib/brake.mjs`,规矩见 `references/dispatch.md` §12)。
 敏感路径的判据从 `.claude/belltower.json` 的 `sensitivePaths` 读。
 
 - **加闸门**:必须能指到一次真实事故;必须带放行口子(或写明为什么不带);

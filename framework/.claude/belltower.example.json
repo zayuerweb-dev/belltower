@@ -11,5 +11,6 @@
     "bash": "((^|[\\s\"'/\\\\])(sensitive|private-data)([/\\\\]|\\s|$)|credentials?\\.json|secrets?\\.json|\\.(pem|pfx|p12)(\\s|$))",
     "edit": "((^|/)(sensitive|private-data)/|(^|/)credentials?\\.json$|(^|/)secrets?\\.json$|\\.(pem|pfx|p12)$)"
   },
-  "directPush": []
+  "directPush": [],
+  "brakeRounds": 3
 }

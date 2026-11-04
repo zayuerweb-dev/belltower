@@ -2,7 +2,7 @@
 // PreToolUse(Edit|Write|NotebookEdit)。stdin 解析失败一律放行(fail-open)。
 // 闸门:① 冻结清单 ② key 不落盘 ③ 敏感数据不许写进本仓库(铁律1 的默认值)
 // ④ 立号先确认 ⑤ 授权词要带用户原话 ⑥ 写「PR 已合」前先查 main
-// 闸门14 的记账半:往收件箱新增给别的塔的留言,只记不拦(收尾时 guard-stop 核门铃)。
+// 闸门14 的记账半:往收件箱新增给别的塔的留言,只记不拦(收尾时 guard-stop 核门铃);带〔攒批〕/〔待用户〕刹车记号的不记。
 import { readFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, relative } from "node:path";
@@ -163,7 +163,12 @@ if (rel === "docs/BACKLOG.md") {
     const { relayKeys } = await import("./lib/doorbell.mjs");
     let me = null;
     try { me = whoAmI().board; } catch {}
-    const tally = (t) => relayKeys(t, config().boards, me)
+    // 刹车:头一行带〔攒批〕(轻缺陷,等 dev 一次批量修)或〔待用户〕(推断会改行为,等用户点头)的留言本来就不该按门铃 —— 不记。
+    //   记号在 ` · ` 前后都认,括号宽松(lib/brake.mjs 的 brakeMarked)。lib 载不进来 → 不豁免、照记(宁可多催一次)。
+    let marked = () => false;
+    try { marked = (await import("./lib/brake.mjs")).brakeMarked; } catch {}
+    const unmarked = (t) => String(t ?? "").split("\n").filter((l) => !(/^- /.test(l) && marked(l))).join("\n");
+    const tally = (t) => relayKeys(unmarked(t), config().boards, me)
       .reduce((m, k) => m.set(k, (m.get(k) ?? 0) + 1), new Map());
     const had = tally(beforeText());
     let i = 0;

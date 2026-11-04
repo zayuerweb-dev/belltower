@@ -625,6 +625,18 @@ function stop14({ flags = `relay:dev:${T14}\n`, entries = [], pool = POOL14, dir
   r = stop14({ entries: [tuse(60000, SRV + "create_trigger",
     { persistent_session_id: S_DEV, prompt: "去读收件箱", run_once_at: "2026-01-06T16:00:00Z" })] });
   assert("红:闸14 带 run_once_at 的建门铃没有结果 → 不算,照拦", blocked(r) && /· → dev/.test(r.reason), r.reason.slice(0, 160));
+  // ★ 没结果的建门铃也要更新「最近想绑谁」:后面回执认不出、id 也对不上的 fire 落到它想绑的会话,不落回更早那个门铃。
+  //   v0.3.2 把没结果的 create_trigger 整条跳过,那次 fire 就记到了更早门铃绑的会话上(装了框架的项目审查发现)。
+  r = stop14({ entries: [mkBell(-60000, S_DEV, "trig_X1"),
+    tuse(60000, SRV + "create_trigger", { persistent_session_id: S_OPS, prompt: "去读收件箱" }),
+    tuse(70000, SRV + "fire_trigger", { trigger_id: "trig_Y1" }, "ok")] });
+  assert("红:闸14 先前建过绑 dev 的门铃,留言后建绑 ops 的没结果、再按一个认不出的 → 算按给 ops,dev 照拦",
+    blocked(r) && /· → dev/.test(r.reason), r.reason.slice(0, 160));
+  r = stop14({ entries: [mkBell(-60000, S_OPS, "trig_X2"),
+    tuse(60000, SRV + "create_trigger", { persistent_session_id: S_DEV, prompt: "去读收件箱" }),
+    tuse(70000, SRV + "fire_trigger", { trigger_id: "trig_Y2" }, "ok")] });
+  assert("绿:闸14 先前建过绑 ops 的门铃,留言后建绑 dev 的没结果、再按一个认不出的 → 算按给 dev(取最近想绑的),放行",
+    stopOk(r), r.reason.slice(0, 160));
   r = stop14({ flags: `relay:dev:${T14}\nbell:trig_A10:DEVTOWER0000000001:DEVTOWER0000000001:${T14 + 5000}\n` });
   assert("绿:闸14 transcript 里没有、旗标里有 PostToolUse 记的回执,绑的是 dev → 放行", stopOk(r), r.reason.slice(0, 160));
   r = stop14({ flags: `relay:dev:${T14}\nbell:trig_A10:DEVTOWER0000000001:DEVTOWER0000000001:${T14 - 5000}\n` });
@@ -1298,6 +1310,232 @@ for (const tz of BAD_TZ) {
     tc.length === 1 && !tc[0].matcher, JSON.stringify(ss));
 }
 
+// ── 闸门17 派工刹车 · 闸门14 记账豁免 · scripts/brake.mjs(规矩见 dispatch.md「刹车」)─────────────
+// 沙箱里建带 origin 的仓库,造 squash 和普通合并两种合进提交,提交时刻钉死,期望值写死在这儿。
+// 全角字用码位拼(FW):源码里看不出全角半角。
+{
+  const { pathToFileURL } = await import("node:url");
+  const bk = await import(pathToFileURL(resolve(".claude/hooks/lib/brake.mjs")).href);
+  const FW = (...c) => String.fromCharCode(...c);
+  const L = FW(0x3014), R = FW(0x3015);                 // 〔 〕
+  const BATCH = L + "攒批" + R, USER = L + "待用户" + R;
+  const at = (dir, when, ...a) => execFileSync("git", a, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when } });
+  const BACKLOG = [
+    "# BACKLOG", "", "## 三、收件箱", "",
+    `- 2031-01-10 08:00 · test → dev ${BATCH} · 列表页按钮颜色偏浅`,
+    `- 2031-01-10 09:30 · test → **dev** · ${FW(0x3010)}攒批${FW(0x3011)} · 详情页标题少一个空格`,
+    `  ${L}已修 Q399${R}`,
+    `- 2031-01-10 10:00 · test → dev ${BATCH} · 日期格式不统一`,
+    `  ${L}dev 收到 · 不修:按规格就是这样${R}`,
+    `- ~~2031-01-10 11:00 · test → dev ${BATCH} · 已作废的一条~~`,
+    "- 2031-01-10 12:00 · test → dev [攒批] · 搜索框占位字太长",
+    `  ~~${L}已修 Q398${R}~~`,
+    `- 2031-01-10 13:00 · test → product ${BATCH} · 文案问题`,
+    "- 2031-01-10 14:00 · test → dev · 页面报错(阻塞)", ""].join("\n");
+  const JOURNAL = ["# journal", "",
+    "- 2031-01-11 09:00 · dev · 用户 2031-01-11 08:50 原话「第四轮可以做,做完停」",
+    `- 2031-01-11 09:10 · dev · 用户 2031-01-11 09:05 原话「再做一轮${FW(0xFF1A)}修好 API」`, ""].join("\n");
+  // [时刻, 标题] —— 标题以 (#n) 结尾的是 squash;"merge:" 开头的造一个普通合并提交(正文第一行 = PR 标题)
+  const MERGES = [
+    ["2030-12-01T10:00:00Z", "Q304 · a (#1)"], ["2030-12-01T11:00:00Z", "Q304b · a (#2)"],
+    ["2030-12-01T12:00:00Z", "Q304c · a (#3)"], ["2030-12-01T13:00:00Z", "Q304d · a (#4)"],
+    ["2031-01-09T10:00:00Z", "Q36 · b (#5)"], ["2031-01-09T10:10:00Z", "Q36b · b (#6)"], ["2031-01-09T10:20:00Z", "Q36c · b (#7)"],
+    ["2031-01-09T11:00:00Z", "Q3610 · c (#8)"], ["2031-01-09T11:10:00Z", "Q3610b · c (#9)"], ["2031-01-09T11:20:00Z", "Q3610c · c (#10)"],
+    ["2031-01-10T07:00:00Z", "Q301 · 第一轮 (#11)"],
+    ["2031-01-10T08:00:00Z", "dev Q301b: 第二轮 (#12)"],          // 号不在开头也认
+    ["2031-01-10T09:00:00Z", "merge:13:Q301c · 第三轮"],          // 普通合并
+    ["2031-01-10T09:30:00Z", "Q301 收尾 (#20) 补丁"],              // (#n) 不在结尾 → 不算交付
+    ["2031-01-10T09:40:00Z", "Q301 · 再补一笔 (#21)"],             // 同一个号再合 → 不加轮
+    ["2031-01-10T10:00:00Z", "Q302 · x (#14)"], ["2031-01-10T11:00:00Z", "Q302b · x (#15)"],
+    ["2031-01-10T17:00:00Z", "Q303 · y (#16)"], ["2031-01-10T18:00:00Z", "Q303b · y (#17)"],
+    ["2031-01-10T19:00:00Z", "Q303c · y (#18)"], ["2031-01-10T20:00:00Z", "Q303d · y (#19)"],
+  ];
+  const repo = gitSandbox();
+  writeFileSync(join(repo, "docs/BACKLOG.md"), BACKLOG);
+  writeFileSync(join(repo, "docs/journal.md"), JOURNAL);
+  gitq(repo, "add", "docs"); at(repo, "2030-11-30T00:00:00Z", "commit", "-qm", "init");
+  for (const [when, title] of MERGES) {
+    const m = title.match(/^merge:(\d+):(.*)$/);
+    if (!m) { at(repo, when, "commit", "--allow-empty", "-qm", title); continue; }
+    gitq(repo, "checkout", "-qb", "feat");
+    at(repo, when, "commit", "--allow-empty", "-qm", "分支上的一笔 Q399 (#99)");   // 分支自己的提交:--first-parent 不看
+    gitq(repo, "checkout", "-q", "main");
+    at(repo, when, "merge", "--no-ff", "-q", "feat", "-m", `Merge pull request #${m[1]} from o/feat`, "-m", m[2]);
+    gitq(repo, "branch", "-qD", "feat");
+  }
+  gitq(repo, "push", "-q", "origin", "main");
+  const POOL_DEV = "| dev | `tower-dev` | 云 | `session_DEVTOWER0000000001` | 在跑 |\n";
+  writeFileSync(join(repo, "docs/session-pool.md"), POOL_DEV);   // 工作树里摆活表(whoAmI 读工作树),不进 origin/main
+  let n = 0;
+  const go = (prompt, { dir = repo, title = "", env = {}, sid = `bk${++n}` } = {}) => {
+    seed0(dir, sid, "dispatch-reminded\n");
+    const r = runIn(dir, "guard-mcp.mjs", { session_id: sid, tool_name: "mcp__Claude_Code_Remote__create_session",
+      tool_input: { ...SRC, title, prompt } }, { CLAUDE_CODE_REMOTE_SESSION_ID: "", ...env });
+    return { ...r, sid, dir, again: () => runIn(dir, "guard-mcp.mjs", { session_id: sid, tool_name: "mcp__Claude_Code_Remote__create_session",
+      tool_input: { ...SRC, title, prompt } }, { CLAUDE_CODE_REMOTE_SESSION_ID: "", ...env }) };
+  };
+  const tb = (q, rest = "") => `# ${q} · 某件活\n\n板块=dev 任务=${q}\n${rest}`;
+
+  // (a) 轮次
+  let r = go(tb("Q302c"));
+  assert("闸17 绿:Q302 家已合 2 个号,派 Q302c 是第 3 轮 → 放行", allowed(r), r.err.slice(0, 160));
+  r = go(tb("Q301d"));
+  assert("闸17 红:Q301 家已合 3 个号(squash 两种标题 + 普通合并),派 Q301d 是第 4 轮 → 拦", denied(r) && /第 4 轮/.test(r.err) && /上限 3/.test(r.err), r.err.slice(0, 200));
+  assert("闸17 红:提示列出已合的号 · PR 号 · 合进时刻(项目时区),按合进顺序",
+    /Q301 · #11 · 2031-01-10 02:00\n\s*· Q301b · #12 · 2031-01-10 03:00\n\s*· Q301c · #13 · 2031-01-10 04:00\n/.test(r.err), r.err);
+  assert("闸17 红:提示写了放行办法(点头行)和「不是返工」原样再来", /用户点头:「原话」/.test(r.err) && /不是返工/.test(r.err) && /brake\.mjs rounds Q301d/.test(r.err), r.err);
+  assert("闸17 红:(#n) 不在结尾的、同一个号再合的,都不多算一轮", !/#20|#21/.test(r.err), r.err);
+  assert("闸17 绿:同一家第二次放行(每家拦一次)", allowed(r.again()));
+  assert("闸17 记旗标 brake-rounds:Q301", flagsIn(repo, r.sid).split("\n").includes("brake-rounds:Q301"), flagsIn(repo, r.sid));
+  r = go(tb("Q301c"));
+  assert("闸17 绿:再派已合过的号 Q301c,不算新的一轮(第 3 轮)→ 放行", allowed(r), r.err.slice(0, 160));
+  r = go("任务书没有标题行", { title: "Q301d · 从 title 取号" });
+  assert("闸17 红:任务书没有 `# ` 行 → 用 title 取号", denied(r) && /第 4 轮/.test(r.err), r.err.slice(0, 160));
+
+  // 返工自并家
+  r = go(tb("Q305"));
+  assert("闸17 绿:新号 Q305(家里一个都没合)→ 放行", allowed(r), r.err.slice(0, 160));
+  r = go(tb("Q305", "返工自 Q301(上一轮没修完)\n"));
+  assert("闸17 红:任务书写「返工自 Q301」→ 并进 Q301 家,第 4 轮 → 拦", denied(r) && /Q305 \+ Q301/.test(r.err) && /第 4 轮/.test(r.err), r.err.slice(0, 200));
+
+  // 号边界
+  r = go(tb("Q361"));
+  assert("闸17 绿:Q36、Q3610 两家各合 3 个号,派 Q361 不算进任何一家 → 第 1 轮放行", allowed(r), r.err.slice(0, 160));
+  r = go(tb("Q36d"));
+  assert("闸17 红:派 Q36d → Q36 家第 4 轮(证明 Q36 那三笔认得出)", denied(r) && /第 4 轮/.test(r.err) && !/Q3610/.test(r.err), r.err.slice(0, 200));
+  r = go(tb("Q3610d"));
+  assert("闸17 红:派 Q3610d → Q3610 家第 4 轮,不混进 Q36", denied(r) && /第 4 轮/.test(r.err) && !/Q36 ·/.test(r.err), r.err.slice(0, 200));
+  assert("刹车 lib:号边界 —— Q36 / Q361 / Q3610 各是各的基号;Q361c-2 ≠ Q361c-20;后面紧挨字母或 `-` 的不算号",
+    JSON.stringify(bk.qNos("Q36 Q361 Q3610 Q361c-2 Q361c-20 xQ5 Q7X Q8- Q9c-").map((q) => q.no)) === JSON.stringify(["Q36", "Q361", "Q3610", "Q361c-2", "Q361c-20"]) &&
+    bk.baseOf("Q361c-20") === "Q361",
+    JSON.stringify(bk.qNos("Q36 Q361 Q3610 Q361c-2 Q361c-20 xQ5 Q7X Q8- Q9c-")));
+  {
+    const dels = [{ q: "Q361c-20", base: "Q361" }];
+    assert("刹车 lib:Q361c-20 合过,再派 Q361c-2 是新号(第 2 轮);再派 Q361c-20 不加轮(第 1 轮)",
+      bk.familyRounds("Q361c-2", [], dels).round === 2 && bk.familyRounds("Q361c-20", [], dels).round === 1);
+  }
+
+  // 派工塔号段优先
+  const DEV_ENV = { CLAUDE_CODE_REMOTE_SESSION_ID: "cse_DEVTOWER0000000001" };
+  r = go("# 修 Q201 提的那条 · Q301d\n", { env: DEV_ENV });
+  assert("闸17 红:dev 塔(活表认出)派工,标题里先出现 Q201 —— 取本塔号段 Q3xx 的 Q301d → 第 4 轮拦", denied(r) && /Q301d/.test(r.err), r.err.slice(0, 160));
+  r = go("# 修 Q201 提的那条 · Q301d\n");
+  assert("闸17 绿:同一标题,认不出塔 → 取第一个号 Q201(第 1 轮)放行", allowed(r), r.err.slice(0, 160));
+  assert("刹车 lib:号段首位从 ranges 读(Q3xx → 3);四位号也认本段;没配的板块 → null",
+    bk.rangeDigit("dev", { dev: "Q3xx" }) === "3" && bk.rangeDigit("patrol", { dev: "Q3xx" }) === null &&
+    bk.firstQ("Q201 Q3001", "3")?.no === "Q3001" && bk.firstQ("Q201 Q31", "3")?.no === "Q201");
+
+  // 点头行
+  r = go(tb("Q301d", "用户点头:「第四轮可以做,做完停」(2031-01-11 08:50,dev 塔)\n"));
+  assert("闸17 绿:点头行的原话在 origin/main 的 journal 里查得到 → 放行", allowed(r), r.err.slice(0, 200));
+  r = go(tb("Q301d", `- **用户点头${FW(0xFF1A)}**「再做一轮:修好API」(2031-01-11 09:05,dev 塔)\n`));
+  assert("闸17 绿:点头行带列表记号 / 加粗 / 全角冒号,原话排版变体(半角冒号、英文前没空格)也认", allowed(r), r.err.slice(0, 200));
+  r = go(tb("Q301d", "用户点头:「随便做吧我不管了」(2031-01-11 10:00,dev 塔)\n"));
+  assert("闸17 红:点头行有,但原话台账里没有 → 照拦,写明「台账里没找到这句」",
+    denied(r) && /台账里没找到这句/.test(r.err) && /随便做吧我不管了/.test(r.err), r.err.slice(0, 300));
+  r = go(tb("Q301d", "上次说的用户点头:「第四轮可以做,做完停」\n"));
+  assert("闸17 红:「用户点头」不在行首(只是引用)→ 不算点头行", denied(r) && !/台账里没找到/.test(r.err), r.err.slice(0, 200));
+
+  // 配置
+  withCfg(repo, { brakeRounds: 0 });
+  r = go(tb("Q301d"));
+  assert("闸17 绿:brakeRounds = 0 → 关掉轮次封顶,第 4 轮也放行", allowed(r), r.err.slice(0, 160));
+  withCfg(repo, { brakeRounds: 2 });
+  r = go(tb("Q302c"));
+  assert("闸17 红:brakeRounds = 2 → Q302c 第 3 轮就拦(上限从配置读)", denied(r) && /上限 2/.test(r.err), r.err.slice(0, 160));
+  withCfg(repo, { brakeRounds: -1 });
+  r = go(tb("Q301d"));
+  assert("闸17 红:brakeRounds 写坏了(-1)→ 用默认 3,第 4 轮拦", denied(r) && /上限 3/.test(r.err), r.err.slice(0, 160));
+  rmSync(join(repo, ".claude/belltower.json"), { force: true });
+
+  // 没有 origin/main
+  {
+    const bare = gitSandbox();
+    writeFileSync(join(bare, "docs/journal.md"), "x\n");
+    gitq(bare, "add", "docs"); gitq(bare, "commit", "-qm", "Q301d · x (#1)");
+    r = go(tb("Q301d"), { dir: bare });
+    assert("闸17 绿:没有 origin/main(没推过)→ 放行(fail-open)", allowed(r), r.err.slice(0, 160));
+    r = go(tb("Q301d"), { dir: sandbox() });
+    assert("闸17 绿:不是 git 仓库 → 放行(fail-open)", allowed(r), r.err.slice(0, 160));
+  }
+
+  // (b) 〔待用户〕
+  r = go(tb("Q310", `- 列表默认按时间倒序 ${USER}\n`));
+  assert("闸17 红:任务书带〔待用户〕→ 拦", denied(r) && /待用户/.test(r.err) && /用户点头:「原话」/.test(r.err), r.err.slice(0, 200));
+  assert("闸17 绿:〔待用户〕只拦一次", allowed(r.again()));
+  assert("闸17 记旗标 brake-pending-user", flagsIn(repo, r.sid).split("\n").includes("brake-pending-user"));
+  r = go(tb("Q310", `- 列表默认按时间倒序 ${USER}\n用户点头:「第四轮可以做,做完停」(2031-01-11 08:50,dev 塔)\n`));
+  assert("闸17 绿:〔待用户〕+ 查得到的点头行 → 放行", allowed(r), r.err.slice(0, 200));
+  r = go(tb("Q310", `- 列表默认按时间倒序 ${USER}\n用户点头:「台账里根本没有这句」(2031-01-11 08:50,dev 塔)\n`));
+  assert("闸17 红:〔待用户〕+ 查不到的点头行 → 拦,写明「台账里没找到」", denied(r) && /台账里没找到这句/.test(r.err), r.err.slice(0, 200));
+  for (const [name, mark] of [["【】", FW(0x3010) + "待用户" + FW(0x3011)], ["［ ］带空白", FW(0xFF3B) + " 待用户 " + FW(0xFF3D)], ["半角 []", "[待用户]"]]) {
+    r = go(tb("Q310", `- 某条 ${mark}\n`));
+    assert(`闸17 红:〔待用户〕括号变体 ${name} 也认`, denied(r) && /待用户/.test(r.err), r.err.slice(0, 120));
+  }
+  r = go(tb("Q310", "- 某条 [推断] 待用户确认\n"));
+  assert("闸17 绿:没带括号记号(只是「待用户」三个字)→ 不拦", allowed(r), r.err.slice(0, 120));
+
+  // 闸门14 记账:带〔攒批〕/〔待用户〕的留言不记 relay
+  {
+    const INBOX = "## 三、收件箱\n\n- 2031-01-05 10:00 · dev → **test** · 旧的一条\n";
+    const rel = (sid, add) => {
+      const d = sandbox();
+      const x = runIn(d, "guard-edit.mjs", { session_id: sid, tool_name: "Edit",
+        tool_input: { file_path: "docs/BACKLOG.md", old_string: INBOX, new_string: INBOX + add } }, { CLAUDE_CODE_REMOTE_SESSION_ID: "" });
+      return { ...x, relays: flagsIn(d, sid).split("\n").filter((l) => l.startsWith("relay:")) };
+    };
+    let e = rel("bz1", `- 2031-01-06 10:00 · test → dev ${BATCH} · 按钮颜色偏浅\n`);
+    assert("闸14 记:带〔攒批〕的留言(记号在目标后)→ 不记 relay", allowed(e) && e.relays.length === 0, e.relays.join(" | "));
+    e = rel("bz2", `- 2031-01-06 10:00 · product → dev · ${USER} · 列表默认排序改了\n`);
+    assert("闸14 记:带〔待用户〕的留言(记号在 ` · ` 后)→ 不记 relay", e.relays.length === 0, e.relays.join(" | "));
+    e = rel("bz3", `- 2031-01-06 10:00 · test → dev · ${FW(0x3010)} 攒批 ${FW(0x3011)} · x\n`);
+    assert("闸14 记:括号变体【 攒批 】也认 → 不记", e.relays.length === 0, e.relays.join(" | "));
+    e = rel("bz4", "- 2031-01-06 10:00 · test → dev · 页面报错,主流程走不通\n");
+    assert("闸14 记:不带记号的同样一行 → 照记 relay:dev", e.relays.length === 1 && /^relay:dev:\d+$/.test(e.relays[0]), e.relays.join(" | "));
+    e = rel("bz5", `- 2031-01-06 10:00 · test → dev ${BATCH} · 轻的\n- 2031-01-06 10:01 · test → dev · 阻塞的\n`);
+    assert("闸14 记:一笔里一条带记号一条不带 → 只记一条", e.relays.length === 1, e.relays.join(" | "));
+  }
+
+  // scripts/brake.mjs
+  const BRAKE = resolve("scripts/brake.mjs");
+  const cli = (args, dir = repo) => {
+    const x = spawnSync(process.execPath, [BRAKE, ...args], { cwd: dir, encoding: "utf8" });
+    return { code: x.status, out: x.stdout ?? "", err: x.stderr ?? "" };
+  };
+  let c = cli(["rounds", "Q301d"]);
+  assert("brake rounds Q301d:列已合号 · PR · 合进时刻,报第 4 轮、超过要点头",
+    c.code === 0 && c.out.startsWith("Q301 · #11 · 合进 2031-01-10 02:00\nQ301b · #12 · 合进 2031-01-10 03:00\nQ301c · #13 · 合进 2031-01-10 04:00\n") &&
+    /— Q301 这一家已合 3 个号 · 再派 Q301d 是第 4 轮,上限 3,超过要用户点头/.test(c.out), c.out + c.err);
+  c = cli(["rounds", "Q302c"]);
+  assert("brake rounds Q302c:第 3 轮,不提点头", c.code === 0 && /再派 Q302c 是第 3 轮,上限 3 ·/.test(c.out) && !/点头/.test(c.out), c.out);
+  c = cli(["rounds", "Q305", "Q301", "--json"]);
+  let j = null; try { j = JSON.parse(c.out); } catch {}
+  assert("brake rounds Q305 Q301 --json:几个号并成一家,next_round 4、needs_nod",
+    c.code === 0 && j && j.family.join() === "Q305,Q301" && j.next_round === 4 && j.needs_nod === true && j.merged.length === 3, c.out + c.err);
+  assert("brake rounds:参数错(不是 Q 号 / 没给号)→ 退出 2", cli(["rounds", "abc"]).code === 2 && cli(["rounds"]).code === 2 && cli(["nope"]).code === 2);
+  assert("brake rounds:读不到 ref → 退出 2", cli(["rounds", "Q301", "--ref", "origin/nope"]).code === 2);
+  const NOW = ["--now", "2031-01-11T00:00:00Z"];   // 美东 2031-01-10 19:00
+  c = cli(["batch", ...NOW]);
+  const lines = c.out.trim().split("\n");
+  assert("brake batch:列开着的〔攒批〕—— 已修 / 不修 / 头一行被划掉的不列,收口被划掉的照列;发给谁都列、标出目标",
+    c.code === 0 && lines.length === 4 &&
+    lines[0] === "2031-01-10 08:00 · test → dev · 列表页按钮颜色偏浅 · 开了 11 小时" &&
+    lines[1] === "2031-01-10 12:00 · test → dev · 搜索框占位字太长 · 开了 7 小时" &&
+    lines[2] === "2031-01-10 13:00 · test → product · 文案问题 · 开了 6 小时" &&
+    lines[3].startsWith("— 开着的〔攒批〕3 条 · 其中发给 dev 的 2 条"), c.out + c.err);
+  c = cli(["batch", "--older", "10", "--json", ...NOW]);
+  j = null; try { j = JSON.parse(c.out); } catch {}
+  assert("brake batch --older 10 --json:只剩开了 11 小时那条", c.code === 0 && j && j.length === 1 && j[0].hours === 11 && j[0].dsts.join() === "dev", c.out + c.err);
+  c = cli(["over", ...NOW]);
+  assert("brake over:过去 24 小时合进、让一家超过上限的 —— 只有 Q303d(Q304d 太早)",
+    c.code === 0 && c.out.startsWith("Q303d · #19 · 合进 2031-01-10 15:00 · Q303 这一家第 4 轮(上限 3)\n— 过去 24 小时合进的交付里,超过上限的 1 笔"), c.out + c.err);
+  c = cli(["over", "--hours", "2000", "--json", ...NOW]);
+  j = null; try { j = JSON.parse(c.out); } catch {}
+  assert("brake over --hours 2000:窗口放宽,Q304d 也进来", c.code === 0 && j && j.map((x) => x.q).join() === "Q304d,Q303d", c.out + c.err);
+  assert("brake:不认识的参数 → 退出 2", cli(["batch", "--bogus"]).code === 2);
+}
+
 // ── 坏输入一律 fail-open ────────────────────────────────────────────────
 for (const h of ["guard-bash.mjs", "guard-edit.mjs", "guard-stop.mjs"]) {
   const r = spawnSync(process.execPath, [join(HOOKS, h)],
@@ -1312,7 +1550,7 @@ for (const d of SANDBOXES) rmSync(d, { recursive: true, force: true });
 {
   const hooksDir = ".claude/hooks";   // 跟上面跑 hook 一样,以项目根为当前目录
   const files = ["guard-bash.mjs", "guard-edit.mjs", "guard-mcp.mjs", "guard-stop.mjs", "session-start.mjs", "lib/config.mjs",
-    "lib/doorbell.mjs", "tower-card.mjs", "lib/tower-card.mjs"];
+    "lib/doorbell.mjs", "tower-card.mjs", "lib/tower-card.mjs", "lib/brake.mjs"];
   const code = (f) => readFileSync(join(hooksDir, f), "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
   const numbered = files.filter((f) => /铁律\d/.test(code(f)));
   assert("闸门报文按规矩名引用铁律,不写编号", !numbered.length, numbered.join(", "));
