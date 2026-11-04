@@ -2,10 +2,11 @@
 // PreToolUse(Edit|Write|NotebookEdit)。stdin 解析失败一律放行(fail-open)。
 // 闸门:① 冻结清单 ② key 不落盘 ③ 敏感数据不许写进本仓库(铁律1 的默认值)
 // ④ 立号先确认 ⑤ 授权词要带用户原话 ⑥ 写「PR 已合」前先查 main
+// 闸门14 的记账半:往收件箱新增给别的塔的留言,只记不拦(收尾时 guard-stop 核门铃)。
 import { readFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, relative } from "node:path";
-import { config, regex } from "./lib/config.mjs";
+import { config, regex, whoAmI } from "./lib/config.mjs";
 
 let input;
 try { input = JSON.parse(readFileSync(0, "utf8")); } catch { process.exit(0); }
@@ -112,7 +113,7 @@ if (LEDGER_MD.test(rel) && !flags.includes("authword-reminded")) {
          `  台账是塔自己写的 —— 你在这儿写「解除阻塞」,别的塔读到就当真去开工了。\n` +
          `  **2026-09-10 就是这么出的事**:plan 塔自己评审完自己写「开发解除阻塞」,\n` +
          `  dev 读到就派了工人,代码进了 main,而用户那会儿还在跟 plan 聊设计。\n\n` +
-         `  要么把**用户的原话 + 时刻**写进同一段(「用户 22:22 ET:『……』」),\n` +
+         `  要么把**用户的原话 + 时刻**写进同一段(「用户 HH:MM ET:『……』」),\n` +
          `  要么改个说法 —— 「plan 塔的评审结论是 X」跟「开发解除阻塞」不是一回事。\n` +
          `  (本闸只拦这一次,再来就放行。)`);
   }
@@ -148,6 +149,27 @@ if (LEDGER_MD.test(rel) && !flags.includes("prmerged-reminded")) {
            `  先自己查一遍 GitHub 再写台账;确实合了(或者合并方式没留编号,比如 rebase)就再来一次放行。`);
     }
   }
+}
+
+// ── 闸门14 记账半:往收件箱新增了给别的塔的留言 —— 记下来,收尾时 guard-stop 核门铃 ─────────
+// 只记不拦。放在所有 deny 之后:被前面闸门拒掉的这一笔没落盘,不该记账;重试放行之后再记。
+// (Edit 自己失败的那笔也会记上 —— PreToolUse 看不到结果;收尾那道是软闸,原样再停就放行。)
+// 哪些行算留言、目标怎么认,见 lib/doorbell.mjs 的 relayKeys:`- 日期 … 源 → 目标 · …`,目标只认配置 boards 里的板块;
+//   抄送(括号里的)、写给自己的、写给用户的都不算。me = whoAmI 认出的本塔:记别的塔发给本塔的话,不是要本塔去叫谁。
+// 按「目标集合」计数比前后,不按整行文本 —— 改旧留言的时刻、措辞不误记。记成 `relay:<目标们>:<毫秒>`。
+// lib 载不进来、活表读不了 → 这一段跳过或少认一样(记不了账就不记,闸门自己坏了要放行)。
+if (rel === "docs/BACKLOG.md") {
+  try {
+    const { relayKeys } = await import("./lib/doorbell.mjs");
+    let me = null;
+    try { me = whoAmI().board; } catch {}
+    const tally = (t) => relayKeys(t, config().boards, me)
+      .reduce((m, k) => m.set(k, (m.get(k) ?? 0) + 1), new Map());
+    const had = tally(beforeText());
+    let i = 0;
+    for (const [k, n] of tally(afterText()))
+      for (let j = had.get(k) ?? 0; j < n; j++) remember(`relay:${k}:${Date.now() + i++}`);
+  } catch {}
 }
 
 process.exit(0);

@@ -5,13 +5,14 @@
  * 为什么存在:塔与塔之间的细节只靠文件总线传(门铃只负责叫醒,见 tower.md
  * 「跨会话通信」节)。但各塔被开在各自分支上,写在自己分支的台账别的塔读不到 ——
  * 总线看着通、实际各说各话(2026-09-09 实测复发两次)。所以台账四件直推 main
- * (这个口子要用户授权过才开,授权范围只有台账四件)。
+ * (这个口子要用户授权过才开,默认授权范围只有台账四件)。
  *
  * 用法:改完台账文件后
  *     node scripts/ledger-push.mjs "一句话说明"
  *
- * 它只碰下面白名单里的文件。工作区里有别的改动就拒绝跑 —— 那是代码,
- * 代码走自己分支,不许借这个口子上 main。
+ * 它只碰「直推清单」里的文件(scripts/lib/direct-push.mjs):台账四件 + 项目配置
+ * `.claude/belltower.json` 的 directPush 额外放行的(默认没有;要加先问用户)。
+ * 工作区里有别的改动就拒绝跑 —— 那是代码或别的文档,走自己分支,不许借这个口子上 main。
  *
  * ★ main 加了分支保护(要求 CI 绿)之后,**直推**会被拒 —— 各塔的日常记账全断在这儿。
  *   所以加了**自适应**:先照旧试直推,推不上去再回退到 PR 模式(推一个 ledger/* 分支,
@@ -25,13 +26,8 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { DIRECT_PUSH, EXTRA } from './lib/direct-push.mjs';
 
-const LEDGER = [
-  'docs/journal.md',
-  'docs/BACKLOG.md',
-  'docs/session-pool.md',
-  'docs/gate-log.md',
-];
 // 临时分支名带进程号 + 时间:同一台机器多个工作树同时跑,写死一个名字会互撞
 // (checkout -B 失败 / 删分支报 checked out at)。脚本只删自己建的这一个。
 const TMP = `_ledger_tmp_${process.pid}_${Date.now().toString(36)}`;
@@ -74,22 +70,26 @@ if (branch === 'main') die('你已经在 main 上了,直接 commit + push 就行
 let home = branch;   // 每次切去临时分支之前重新取(detached 下 sha 会因为提交 / merge 前进)
 const goHome = () => (branch ? git('checkout', branch) : git('checkout', '--detach', home));
 
-// ── 1) 工作区体检:只许台账有改动 ──────────────────────────────
-const dirty = git('status', '--porcelain')
+// ── 1) 工作区体检:只许直推清单里的文件有改动 ──────────────────
+// --untracked-files=all:不加的话未跟踪目录会折叠成目录名(`docs/plans/`),
+// 清单里的文件头一次新建、又落在新目录里时就认不出来,被当成越界拒掉。
+const dirty = git('status', '--porcelain', '--untracked-files=all')
   .split('\n').filter(Boolean)
   .map((l) => l.slice(3).trim());
-const stray = dirty.filter((f) => !LEDGER.includes(f));
+const stray = dirty.filter((f) => !DIRECT_PUSH.includes(f));
 if (stray.length) {
-  die('工作区里有台账以外的改动,先把它们 commit 或 stash 掉:\n    ' + stray.join('\n    ') +
-      '\n  (代码走自己分支,这个口子只给台账。)');
+  die('工作区里有直推清单以外的改动,先把它们 commit 或 stash 掉:\n    ' + stray.join('\n    ') +
+      '\n  直推清单:' + DIRECT_PUSH.join(' · ') +
+      '\n  (代码和别的文档走自己分支,这个口子只给清单里的文件。' +
+      '\n   要多放行一个文件,先问用户;问过了把路径写进 .claude/belltower.json 的 directPush。)');
 }
-const changed = dirty.filter((f) => LEDGER.includes(f));
+const changed = dirty.filter((f) => DIRECT_PUSH.includes(f));
 
 // ── 2) 台账有改动就先在自己分支上提交 ─────────────────────────
 if (changed.length) {
   if (!msg) die('台账有改动,要一句话说明:node scripts/ledger-push.mjs "改了什么"');
-  console.log('台账改动:\n    ' + changed.join('\n    '));
-  git('add', ...changed);
+  console.log('直推改动:\n    ' + changed.join('\n    '));
+  git('add', '--', ...changed);   // `--`:清单能配,路径别被当成选项
   git('commit', '-m', msg);
   console.log(`\n已提交到 ${label}:${git('rev-parse', '--short', 'HEAD')}`);
 } else {
@@ -102,7 +102,7 @@ if (changed.length) {
 // 先 merge origin/main 进自己分支,让自己分支成为 main 的超集;
 // 之后整份拿自己的台账覆盖过去就是无损的 —— 别人写的行已经在里面了。
 // ── PR 模式:直推被规则挡住时走这条 ─────────────────────────────────
-// 脚本只负责把台账推成一个**只含台账四件**的干净分支;开 PR + 合 PR 由塔用 MCP 做。
+// 脚本只负责把台账推成一个**只含直推清单里的文件**的干净分支;开 PR + 合 PR 由塔用 MCP 做。
 // 为什么不让脚本自己调 GitHub API:记账脚本不该拿着能改仓库的凭据,
 // 而且塔手里本来就有 mcp__github__*,多这一步换来的是脚本零凭据。
 function pushOwnBranch() {
@@ -120,7 +120,7 @@ function pushOwnBranch() {
 }
 
 function prMode() {
-  // HEAD 此刻在 TMP 上 = origin/main + 本塔的台账四件,除台账外一个文件不差
+  // HEAD 此刻在 TMP 上 = origin/main + 本塔的直推清单(台账四件 + 配置放行的),除此之外一个文件不差
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(2, 13);  // 年月日T时分,例 260925T1643
   const slug = (branch ?? 'detached').replace(/^claude\//, '').replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 40);
   const ledgerBranch = `ledger/${slug}-${stamp}`;
@@ -154,7 +154,7 @@ function prMode() {
   console.log(`
 ⚠ **台账还没进 main** —— 直推被挡住了(main 上了分支保护),已转 PR 模式。
 
-台账已推成分支:**${ledgerBranch}**(内容 = origin/main + 本塔台账四件,别的文件一个没带)
+台账已推成分支:**${ledgerBranch}**(内容 = origin/main + 本塔台账四件${EXTRA.length ? ' + ' + EXTRA.join(' · ') : ''},别的文件一个没带)
 ${branchPushed ? `${branch} 也推上去了` : (branch ? '' : '(detached HEAD,没有自己的分支要推)')}
 
 **接下来这两步是你(塔)的,脚本干不了 —— 不做的话别的塔读不到这笔台账:**
@@ -163,7 +163,7 @@ ${branchPushed ? `${branch} 也推上去了` : (branch ? '' : '(detached HEAD,�
      mcp__github__create_pull_request
        owner=${OWNER} repo=${REPO} base=main head=${ledgerBranch}
        title=${JSON.stringify(title)}
-       body="台账同步,只动 docs/journal.md · BACKLOG.md · session-pool.md · gate-log.md 四件。来源 ${label}。"
+       body="台账同步,只动直推清单里的文件:${DIRECT_PUSH.join(' · ')}。来源 ${label}。"
 
   2) 合 PR:先 mcp__github__pull_request_read 读实际状态(闸门11 要求,不许凭徽章就合),
      能合就直接 mcp__github__merge_pull_request。
@@ -193,8 +193,14 @@ for (let i = 1; i <= MAX_RETRY && !pushedSha; i++) {
 
   home = branch ?? git('rev-parse', 'HEAD');
   git('checkout', '-B', TMP, 'origin/main');
+  // 只取自己这边(home)真有的那几件 —— 清单里的文件在分支上可能还不存在(项目刚配上、还没建),
+  // git checkout 碰到不存在的路径整条失败。分支上没有 = 跳过,main 上那份原样留着,不当成要删。
+  // 只认文件(blob):配置里要是写成了目录,checkout 会把分支上整个目录捎上 main。
+  const present = DIRECT_PUSH.filter((f) => {
+    try { return git('cat-file', '-t', `${home}:${f}`) === 'blob'; } catch { return false; }
+  });
   try {
-    git('checkout', home, '--', ...LEDGER);
+    if (present.length) git('checkout', home, '--', ...present);
   } catch (e) {
     goHome();
     try { git('branch', '-D', TMP); } catch {}

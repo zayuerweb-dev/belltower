@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Stop 闸门 6(没证据不许说完成)/ 8(改了 harness 没合 main)/ 12(台账 PR 没合)/ 7(改了文件要写 journal)/ 9(上下文过半)。
-// ★ 8 排在 7 前面:harness 没合 = 别的塔读不到,比少一行 journal 严重。
+// Stop 闸门 6(没证据不许说完成)/ 8(改了 harness 没合 main)/ 12(台账 PR 没合)/ 14(要对方动手的留言没按门铃)/
+// 15(门铃没送到)/ 7(改了文件要写 journal)/ 9(上下文过半)。
+// ★ 8 排在 7 前面:harness 没合 = 别的塔读不到,比少一行 journal 严重。12 / 14 / 15 跟总线有关,挨着 8。
 // 各拦一次,第二次放行。
 // block = stdout 输出 {"decision":"block","reason":...};放行 = 无输出 exit 0。
 //
@@ -100,12 +101,15 @@ if (HARNESS.test(flags) && !flags.includes("mainmerge-reminded")) {
 //   main 了 —— 它改成推一个 ledger/* 分支,**由塔用 MCP 开 PR 再合**。
 //   问题是后半截脚本干不了,只能靠塔记得做;而「两条路径一条自动一条手动,
 //   手动那条靠记性 = 必漏」正是闸门8 的出处,同一个病不该犯第二次。
-// 判据现查,不看记号文件说了算:工作树的台账四件 和 origin/main 上的那份一样吗?
+// 判据现查,不看记号文件说了算:工作树的直推清单 和 origin/main 上的那份一样吗?
 //   一样 = PR 已经合了(或者压根没进 PR 模式),顺手把记号删掉;
 //   不一样 = 还没合,别的塔一行都读不到,拦一次。
+// 清单跟 ledger-push 读同一份(scripts/lib/direct-push.mjs:台账四件 + 配置 directPush 放行的)——
+//   走同一条路上 main 的文件,这道收尾关也得一样管。引用失败(装漏了那个文件)退回下面写死的台账四件。
 const PENDING = ".claude/.session-state/ledger-pending.json";
-const LEDGER_FILES = ["docs/journal.md", "docs/BACKLOG.md",
-                      "docs/session-pool.md", "docs/gate-log.md"];
+let LEDGER_FILES = ["docs/journal.md", "docs/BACKLOG.md",
+                    "docs/session-pool.md", "docs/gate-log.md"];
+try { LEDGER_FILES = (await import("../../scripts/lib/direct-push.mjs")).DIRECT_PUSH; } catch {}
 // ★「拦一次」只管**拦**,不管**查**:查和自清理每次 Stop 都做。
 //   否则拦过一次之后整段跳过,PR 合掉了记号也没人清,下个会话继续被它绊。
 if (existsSync(PENDING)) {
@@ -139,6 +143,105 @@ if (existsSync(PENDING)) {
             "  合掉之后这个记号本闸会自己清掉(它查的是台账进没进 main,不是这个文件)。\n" +
             "  (本闸只拦这一次,再 Stop 就放行。)");
     }
+  }
+}
+
+// ── 门铃的共用件(闸门14、15)──────────────────────────────────────────────
+// 载不进来 = 这两道跳过,别的闸照跑(闸门自己坏了要放行)。transcript 只在真要用时读一次。
+let bell = null;
+try { bell = await import("./lib/doorbell.mjs"); } catch {}
+const flagLines = flags.split("\n");
+const hasLine = (k) => flagLines.includes(k);     // 按整行比对:带时刻的键用 includes 会前缀误中
+let evCache;
+const transcriptEvents = () => {
+  if (evCache === undefined) {
+    const entries = bell.readTranscript(input.transcript_path);
+    evCache = entries ? bell.events(entries) : null;
+  }
+  return evCache;
+};
+
+// ── 闸门14:要对方动手的留言,同一轮得按门铃(软闸,拦一次)────────────────────
+// 出处:规矩早写着「只写留言板不按门铃 = 对方不知道」(tower.md〈平台事实〉),一次犯先记文字规矩 ——
+//   装了框架的项目又犯了两次:写给别的塔的留言只进了收件箱,对方没被叫醒(有一次是用户把话贴过去,对方才看到)。所以上闸。
+// 记账在 guard-edit(往 BACKLOG 新增留言 → 旗标 `relay:<目标们>:<毫秒>`);这里核:
+//   留言时刻之后,每个目标塔都有一个门铃绑在它**当前会话**上 —— 活表塔表「会话 ID」格的第一个 session_…,去前缀比。
+//   门铃从哪几处认见 lib/doorbell.mjs 的 bellsOf(fire_trigger 回执 / 建门铃时绑的会话 / 带 run_once_at 自己会响的 /
+//   PostToolUse 记下的回执)。活表里查不到那个塔的会话(没这一行、还待开)→ 核不了对不对,
+//   只看留言之后有没有按过「活表认不出是哪个塔」的门铃,这样的目标有几个就要几个
+//   (绑在活表里别的塔会话上的门铃是给那个塔的,不算)。
+// 放行口子:留言之后回复里单独一行「不按门铃:理由」(只是告知、不用对方动手);拦过一次,原样再停也放行。
+if (bell) {
+  const pending = flagLines.filter((l) => l.startsWith("relay:")).map((l) => l.slice(6))
+    .filter((id) => /^[a-z0-9+-]+:\d+$/.test(id) && !hasLine(`relay-ok:${id}`) && !hasLine(`relay-reminded:${id}`));
+  const ev = pending.length ? transcriptEvents() : null;   // 快路:没有待核的留言就不读 transcript
+  if (ev) {                                                 // transcript 读不了 → 放行(fail-open)
+    const pool = bell.readPool();
+    const sessOf = (x) => bell.bareSid(bell.poolSession(x, pool) ?? "");
+    const taken = config().boards.map(sessOf).filter(Boolean);   // 活表认得出是哪个塔的会话
+    const bells = bell.bellsOf(ev.calls, flags);
+    const missed = [];
+    for (const id of pending) {
+      const ms = Number(id.slice(id.lastIndexOf(":") + 1));
+      const targets = id.slice(0, id.lastIndexOf(":")).split("+");
+      const after = bells.filter((b) => b.ts > ms);
+      const known = new Set([...taken, ...targets.map(sessOf).filter(Boolean)]);
+      const unrung = targets.filter((x) => sessOf(x) && !after.some((b) => b.sid === sessOf(x)));
+      const blind = targets.filter((x) => !sessOf(x));
+      const spare = new Set(after.filter((b) => !known.has(b.sid)).map((b, i) => b.sid || `?${i}`)).size;
+      if (blind.length > spare) unrung.push(...blind);
+      if (!unrung.length || bell.ringWaiver(ev.texts, ms) !== null) remember(`relay-ok:${id}`);
+      else missed.push({ id, targets, unrung });
+    }
+    if (missed.length) {
+      for (const m of missed) remember(`relay-reminded:${m.id}`);
+      const towers = [...new Set(missed.flatMap((m) => m.unrung))];
+      block("闸门14:本会话往 docs/BACKLOG.md 收件箱写了给别的塔的留言,**之后没按对应塔的门铃** —— 对方不会醒来读:\n" +
+            missed.map((m) => `  · → ${m.targets.join(" + ")}` +
+              (m.unrung.length < m.targets.length ? `(没按:${m.unrung.join("、")})` : "")).join("\n") +
+            "\n\n只写留言板不按门铃 = 对方不知道(实测过:两条问题只写了收件箱,对方晚了约 7 小时才看到)。" +
+            "\n配方:留言先 `ledger-push` 上 main,再 `create_trigger`(`persistent_session_id` = 对方塔当前会话," +
+            "不给 cron 也不给 run_once_at)→ `fire_trigger`;门铃里只说去读收件箱哪一行。" +
+            "\n对方塔当前会话(活表塔表「会话 ID」格的第一个,先核再按):\n" +
+            towers.map((x) => `  · ${x}:${bell.poolSession(x, pool) ??
+              "活表里没有 —— 去 origin/main 的 docs/session-pool.md 查;那个塔还没开就不用按"}`).join("\n") +
+            "\n塔断开了照按新门铃,叫得醒,不用等用户去它窗口说话;已断开的工人叫不醒(platform-facts §1.1)。" +
+            "\n按之前可以先 `get_session` 看一眼对方的 `connection_status`。" +
+            "\n\n不用对方动手的(只是告知),回复里单独一行以「不按门铃:理由」开头,放行。" +
+            "\n已经按过了(比如上一轮),原样再来一次就放行(本闸只拦这一次)。");
+    }
+  }
+}
+
+// ── 闸门15:门铃没送到(软闸,每个门铃提醒一次)──────────────────────────────
+// 出处:装了框架的项目实测 —— 回执里的 cse_<Y> 跟门铃绑的 session_<X> 对不上,话就落进了平台新开的空会话:
+//   同一个门铃按第二次是这样,往已断开的工人按新门铃也是这样(platform-facts §1.1)。按的人以为送到了,对方根本没收到。
+// 判据:guard-mcp 在 PostToolUse 记下的回执(旗标 `bell:…`)里,绑的和落进的去掉前缀不相等。
+// 已经善后的不提醒:之后又有一个门铃送到了同一个目标;或者之后没报错地归档 / 打断了落错的那个会话
+//   (transcript 里的 archive_session / interrupt_session)。—— 那个项目第一版不认善后,善后完了又被拦一次,冤。
+// 回执认不出 = guard-mcp 没记,这道闸就不响(fail-open)。
+if (bell) {
+  const rings = bell.parseBells(flags);
+  let lost = rings.filter((b) => b.want && b.got && b.want !== b.got && !hasLine(`lost-reminded:${b.key}`));
+  if (lost.length) {
+    const calls = transcriptEvents()?.calls ?? [];
+    lost = lost.filter((b) =>
+      !rings.some((o) => o.ms > b.ms && o.want === b.want && o.got === o.want) &&
+      !calls.some((c) => c.ts > b.ms && !c.isError &&
+        (bell.isTool(c.name, "archive_session") || bell.isTool(c.name, "interrupt_session")) &&
+        bell.bareSid(c.input?.session_id) === b.got));
+  }
+  if (lost.length) {
+    for (const b of lost) remember(`lost-reminded:${b.key}`);
+    block("闸门15:门铃**没送到** —— 回执里落进的会话跟门铃绑的对不上,话落进了平台新开的空会话,目标没收到:\n" +
+          lost.map((b) => `  · ${b.trigger}:绑的 session_${b.want},落进 cse_${b.got}`).join("\n") +
+          "\n\n送达判据:回执的 `cse_<Y>` 去掉前缀,跟门铃绑的 `session_<X>` 去掉前缀相等(platform-facts §1.1)。" +
+          "\n先 `get_session` 看目标的 `connection_status`:" +
+          "\n  · 目标是**塔**(断开的塔新门铃也叫得醒),或者没断开:**新建**一个门铃(`create_trigger` 绑目标会话)再按一次;" +
+          "**别重按旧的** —— 同一个门铃按第二次会掉进新开的空会话;" +
+          "\n  · 目标是 `disconnected` 的**工人**:别再按,新门铃也落空;要返工就派一个新工人到同一个分支。" +
+          "\n落错的那个空会话顺手归档(`archive_session`);按错的门铃停用、别删(删例程会连它开出来的会话一起删)。" +
+          "\n(每个门铃只提醒这一次,再 Stop 就放行。)");
   }
 }
 

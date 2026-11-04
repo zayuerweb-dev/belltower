@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// PreToolUse,只管两个 MCP 工具 —— 它们是现有闸门够不着的两个口子。
-// stdin 解析失败一律放行(fail-open)。两道都是**软闸,各拦一次**:
+// 管几个 MCP 工具 —— 它们是别的闸门够不着的口子(.claude/settings.json 里 grep guard-mcp 看挂在哪):
+//   PreToolUse:create_session(闸门13、10)· merge_pull_request(闸门11)· pull_request_read(记账)· fire_trigger(闸门16);
+//   PostToolUse:create_pull_request · fire_trigger(只记账:开过哪个 PR、门铃回执 —— 回执给 guard-stop 的闸门15 核送达)。
+// stdin 解析失败一律放行(fail-open)。除闸门11 的「自己开的代码 PR 不许自己合」,都是**软闸,各拦一次**:
 // 拦的是「你确认过了吗」,不是「不许干」。
 import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -58,6 +60,58 @@ if (/pull_request_read$/.test(tool)) {
   const n = input.tool_input?.pullNumber ?? input.tool_input?.pull_number;
   if (n) remember(`readpr:${n}`);
   process.exit(0);
+}
+
+// ── 记账:门铃回执(闸门15 核送达、闸门16 认「按过」)────────────────────────
+// fire_trigger 的回执里有两样:门铃绑的会话(trigger.persistent_session_id)和实际落进的会话(session_id)。
+// PreToolUse 拿不到回执,所以这条走 PostToolUse(跟开 PR 记号一个道理)。
+// 记成 `bell:<门铃 id>:<绑的>:<落进的>:<毫秒>`(会话去了前缀)。回执认不出就不记(fail-open)——
+// tool_response 包成什么样没实测,拆法见 lib/doorbell.mjs 的 receiptOf。
+// 认 PostToolUse 两样都看:事件名,或者带了 tool_response —— 哪样缺了都不许掉进下面拦人的那段(工具已经跑完了)。
+const FIRE = /(^|__)fire_trigger$/;
+const POST = input.hook_event_name === "PostToolUse" || input.tool_response !== undefined;
+const cleanId = (s) => String(s ?? "").replace(/[^\w-]/g, "");   // 旗标用冒号分段,id 里只留字母数字 _ -
+if (FIRE.test(tool) && POST) {
+  try {
+    const { receiptOf, bareSid } = await import("./lib/doorbell.mjs");
+    const r = receiptOf(input.tool_response);
+    const tid = cleanId(input.tool_input?.trigger_id) || cleanId(r?.trigger);
+    if (r && tid) remember(`bell:${tid}:${cleanId(bareSid(r.want))}:${cleanId(bareSid(r.got))}:${Date.now()}`);
+  } catch {}
+  process.exit(0);
+}
+
+// ── 闸门16:一个门铃只按一次 ───────────────────────────────────────────────
+// 出处:装了框架的项目实测 —— 同一个门铃第二次按,话不进目标会话,平台另开一个没挂仓库的空会话(platform-facts §1.1);
+//   那边有一次交接就写着合完再去按之前建好的两个门铃 —— 重按旧门铃,两个塔都没收到。
+// 判据:这个门铃本会话已经按过一次 → 按之前拦一次;原样再来放行。「按过」两处认,哪处有都算:
+//   ① PostToolUse 记下的回执(旗标 `bell:<id>:…`,后面带冒号,`trig_1` 不会冒充 `trig_12`);
+//   ② transcript 里同一个 id 的 fire_trigger,**有结果、没报错**,而且不是这一次自己。
+// ★ ② 为什么只认有结果的:PreToolUse 跑的时候,这次调用自己的 tool_use 已经在 transcript 里、还没结果;
+//   同一条消息并发按几个新门铃,兄弟几个也在里面、也没结果。把「没结果」当「没报错」就是拿自己拦自己 ——
+//   那个项目第一版就这样误拦过(同一轮并发按三个新建的门铃,后两个被拦,其实一次都没按出去)。
+// matcher 写 `mcp__.*__fire_trigger`:云会话里 MCP 服务器名可能是一串 ID,不写死。
+if (FIRE.test(tool)) {
+  const tid = String(input.tool_input?.trigger_id ?? "");
+  if (tid && !has(`refire-reminded:${tid}`)) {
+    let pressed = flags.split("\n").some((l) => l.startsWith(`bell:${cleanId(tid)}:`));
+    if (!pressed) {
+      try {
+        const { readTranscript, events, isTool } = await import("./lib/doorbell.mjs");
+        pressed = events(readTranscript(input.transcript_path) ?? []).calls.some((c) =>
+          isTool(c.name, "fire_trigger") && String(c.input?.trigger_id ?? "") === tid &&
+          c.id !== input.tool_use_id && c.result !== null && !c.isError);
+      } catch {}
+    }
+    if (pressed) {
+      remember(`refire-reminded:${tid}`);
+      deny(`闸门16:门铃 ${tid} 本会话**已经按过一次**了。\n` +
+           `  同一个门铃按第二次,话不进目标会话,平台会另开一个没挂仓库的空会话(platform-facts §1.1)。\n` +
+           `  要再说一句话:**新建**一个门铃(create_trigger 带 persistent_session_id = 目标会话)再按;\n` +
+           `  按完核回执:cse_<Y> 去掉前缀跟 session_<X> 去掉前缀相等才算送到(闸门15 收尾时也核)。\n\n` +
+           `  确实要重按这一个,原样再来一次放行。`);
+    }
+  }
 }
 
 // ── 闸门13:开会话要带 source_url + source_revision ─────────────────────────

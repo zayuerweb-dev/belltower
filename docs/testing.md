@@ -4,9 +4,11 @@
 
 | 命令 | 测什么 |
 |---|---|
-| `cd framework && node scripts/test-hooks.mjs` | 每道闸门的红(该拦)/ 绿(不该拦)、配置读取、开局 hook、fail-open;末尾调 `test-ledger-push.mjs` |
+| `cd framework && node scripts/test-hooks.mjs` | 每道闸门的红(该拦)/ 绿(不该拦)、配置读取、开局 hook、fail-open;末尾调下面三个文件,入口只留这一个 |
 | `cd framework && node scripts/test-ledger-push.mjs` | 台账推送的全路径:本地裸仓库 + `pre-receive` 钩子模拟分支保护、抢跑重试、转 PR 模式、闸门12 端到端 |
-| `node scripts/test.mjs` | 上面两条 + init / sync 在临时项目里的真实行为 + scan-public 的每条规则 |
+| `cd framework && node scripts/test-user-quotes.mjs` | 原话汇总(`scripts/user-quotes.mjs`):哪些算用户原话、日期时刻怎么归、去重、读 `origin/main`、配置写坏了不崩 |
+| `cd framework && node scripts/test-fake-clock.mjs` | 假时钟(`scripts/fake-clock.mjs`):跨进程同一只钟、会往前走、起点写坏了报错 |
+| `node scripts/test.mjs` | 上面几条 + init / sync 在临时项目里的真实行为 + scan-public 的每条规则 + 整套测试放到零点前几秒用假时钟再跑一遍 |
 
 **所有用例都在临时沙箱里跑**,不读本仓库的台账和配置 —— 所以装进任何项目都能原样跑绿。
 装进项目之后,项目里的 `node scripts/test-hooks.mjs` 就是同一套。

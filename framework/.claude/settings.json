@@ -7,6 +7,11 @@
             "type": "command",
             "command": "node .claude/hooks/session-start.mjs",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/tower-card.mjs",
+            "timeout": 10
           }
         ]
       }
@@ -44,7 +49,7 @@
         ]
       },
       {
-        "matcher": "mcp__.*__create_session|mcp__github__merge_pull_request|mcp__github__pull_request_read",
+        "matcher": "mcp__.*__create_session|mcp__github__merge_pull_request|mcp__github__pull_request_read|mcp__.*__fire_trigger",
         "hooks": [
           {
             "type": "command",
@@ -67,7 +72,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__github__create_pull_request",
+        "matcher": "mcp__github__create_pull_request|mcp__.*__fire_trigger",
         "hooks": [
           {
             "type": "command",

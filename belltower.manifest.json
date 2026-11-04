@@ -1,13 +1,16 @@
 {
   "name": "belltower",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "upstream": "https://github.com/zayuerweb-dev/belltower",
   "_comment": "framework = 框架文件,belltower-sync 会覆盖更新;init = 起步模板,只在 belltower-init 时拷一次、之后归项目,sync 永远不碰。路径:src 相对本仓库根,dst 相对项目根。",
   "framework": [
     { "src": "framework/.claude/hooks/lib/config.mjs", "dst": ".claude/hooks/lib/config.mjs" },
     { "src": "framework/.claude/hooks/lib/now.mjs", "dst": ".claude/hooks/lib/now.mjs" },
+    { "src": "framework/.claude/hooks/lib/doorbell.mjs", "dst": ".claude/hooks/lib/doorbell.mjs" },
     { "src": "framework/.claude/hooks/now.mjs", "dst": ".claude/hooks/now.mjs" },
     { "src": "framework/.claude/hooks/session-start.mjs", "dst": ".claude/hooks/session-start.mjs" },
+    { "src": "framework/.claude/hooks/lib/tower-card.mjs", "dst": ".claude/hooks/lib/tower-card.mjs" },
+    { "src": "framework/.claude/hooks/tower-card.mjs", "dst": ".claude/hooks/tower-card.mjs" },
     { "src": "framework/.claude/hooks/guard-bash.mjs", "dst": ".claude/hooks/guard-bash.mjs" },
     { "src": "framework/.claude/hooks/guard-edit.mjs", "dst": ".claude/hooks/guard-edit.mjs" },
     { "src": "framework/.claude/hooks/guard-mcp.mjs", "dst": ".claude/hooks/guard-mcp.mjs" },
@@ -18,9 +21,14 @@
     { "src": "framework/.claude/skills/tower-meta/references/dispatch.md", "dst": ".claude/skills/tower-meta/references/dispatch.md" },
     { "src": "framework/.claude/skills/tower-meta/references/patrol.md", "dst": ".claude/skills/tower-meta/references/patrol.md" },
     { "src": "framework/scripts/ledger-push.mjs", "dst": "scripts/ledger-push.mjs" },
+    { "src": "framework/scripts/lib/direct-push.mjs", "dst": "scripts/lib/direct-push.mjs" },
     { "src": "framework/scripts/test-hooks.mjs", "dst": "scripts/test-hooks.mjs" },
     { "src": "framework/scripts/test-ledger-push.mjs", "dst": "scripts/test-ledger-push.mjs" },
     { "src": "framework/scripts/vendor-skills.mjs", "dst": "scripts/vendor-skills.mjs" },
+    { "src": "framework/scripts/user-quotes.mjs", "dst": "scripts/user-quotes.mjs" },
+    { "src": "framework/scripts/test-user-quotes.mjs", "dst": "scripts/test-user-quotes.mjs" },
+    { "src": "framework/scripts/fake-clock.mjs", "dst": "scripts/fake-clock.mjs" },
+    { "src": "framework/scripts/test-fake-clock.mjs", "dst": "scripts/test-fake-clock.mjs" },
     { "src": "scripts/belltower-sync.mjs", "dst": "scripts/belltower-sync.mjs" }
   ],
   "init": [

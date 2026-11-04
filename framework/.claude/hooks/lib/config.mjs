@@ -20,7 +20,23 @@ export const DEFAULTS = Object.freeze({
     bash: String.raw`((^|[\s"'/\\])(sensitive|private-data)([/\\]|\s|$)|credentials?\.json|secrets?\.json|\.(pem|pfx|p12)(\s|$))`,
     edit: String.raw`((^|/)(sensitive|private-data)/|(^|/)credentials?\.json$|(^|/)secrets?\.json$|\.(pem|pfx|p12)$)`,
   },
+  // 台账四件以外、也许直推 main 的文件(ledger-push 和闸门12 都认,清单见 scripts/lib/direct-push.mjs)。
+  // 默认空 = 口子只有台账四件。**要开口子先问用户**,问过了把文件路径写进来。
+  directPush: [],
 });
+
+// directPush 的一项:仓库内的相对路径,一项一个文件,写成 git 自己打印的样子 ——
+// `/` 分段,每段只用 ASCII 字母、数字和 `. _ -`,不许空段、`.`、`..`。
+// 所以通配(* ? [)、绝对路径(/ 开头、盘符的冒号)、反斜杠、`..` 都进不来;
+// 空格、中文这类字符 `git status --porcelain` 会加引号打印,配了也永远对不上,一并不收。
+// 不合格的那一项丢掉;整个键不是数组 / 文件写坏了 = 当没配(空)。
+const REPO_FILE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
+const repoFile = (p) => typeof p === "string" && REPO_FILE.test(p) &&
+  p.split("/").every((s) => s !== "." && s !== "..");
+
+// timezone 要是 Intl 认得的时区名;写坏了(拼错、不存在的区、空串)= 用默认时区。
+// 不在这儿兜,lib/now.mjs 一抛错,开局 hook 和每轮时刻行就整个出不来(测出来过:写成 Mars/Olympus,两个都退出 1)。
+const tzOk = (z) => { try { new Intl.DateTimeFormat("en-US", { timeZone: z }); return true; } catch { return false; } };
 
 let cached = null;
 export function config() {
@@ -39,14 +55,20 @@ export function config() {
     ranges: raw.ranges && typeof raw.ranges === "object" && !Array.isArray(raw.ranges)
       ? Object.fromEntries(Object.entries(raw.ranges).filter(([, v]) => typeof v === "string"))
       : { ...DEFAULTS.ranges },
-    timezone: str(raw.timezone, DEFAULTS.timezone),
+    timezone: typeof raw.timezone === "string" && raw.timezone && tzOk(raw.timezone) ? raw.timezone : DEFAULTS.timezone,
     sensitiveReminder: str(raw.sensitiveReminder, DEFAULTS.sensitiveReminder),
     sensitivePaths: {
       bash: str(sp.bash, DEFAULTS.sensitivePaths.bash),
       edit: str(sp.edit, DEFAULTS.sensitivePaths.edit),
     },
+    directPush: Array.isArray(raw.directPush) ? [...new Set(raw.directPush.filter(repoFile))] : [],
   };
   if (!cached.boards.length) cached.boards = [...DEFAULTS.boards];
+  // directPush 不收代码:codeDirs 底下的、codeExt 扩展名的一律丢掉。
+  // 闸门11 把 ledger/* 分支一律当文档 PR(塔可以自己开自己合);口子里混进代码,就成了绕过「代码 PR 换人合」的后门。
+  const isCode = (p) => cached.codeDirs.some((d) => { const x = d.replace(/\/+$/, ""); return p === x || p.startsWith(`${x}/`); }) ||
+    cached.codeExt.some((e) => p.toLowerCase().endsWith(`.${e.toLowerCase()}`));
+  cached.directPush = cached.directPush.filter((p) => !isCode(p));
   return cached;
 }
 
@@ -62,10 +84,10 @@ export const SKILL_PREFIX = "tower-";
 // ── 塔的本分:认出塔之后念哪几句,按塔分 ────────────────────────────────────
 // 别的塔都念 default;巡检塔不派工人,照「讨论 → 定 → 派工人 → 收活」念会把它带歪,所以单给一套。
 // 每套四句,各给谁用:
-//   start   = 开局 hook(session-start.mjs)认出塔之后那行「塔的本分」—— 这一版只有这句被用到;
-//   turn    = 每轮身份行,跟在「你是 X 塔(常驻)」后面那句 —— 留给下一版的塔卡,先放着;
-//   card    = 塔卡第二行,跟在「★ 你是 X 塔(常驻)。」后面那句 —— 同上;
-//   compact = 塔卡第三行,压缩之后的提醒 —— 同上。
+//   start   = 开局 hook(session-start.mjs)认出塔之后那行「塔的本分」;
+//   turn    = 每轮身份行(now.mjs),跟在「【你是 X 塔(常驻)】」后面那句;
+//   card    = 塔卡(tower-card.mjs)第二行,跟在「★ 你是 X 塔(常驻)。」后面那句;
+//   compact = 塔卡第三行,压缩之后的提醒。
 // 规矩只存一份:要改本分改这里,别在调用处另写一句。
 const DUTY = Object.freeze({
   default: Object.freeze({

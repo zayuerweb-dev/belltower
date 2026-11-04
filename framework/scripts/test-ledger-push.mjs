@@ -16,6 +16,8 @@ import { tmpdir } from "node:os";
 import { join, resolve, dirname as dirname0 } from "node:path";
 
 const SCRIPT = resolve("scripts/ledger-push.mjs");
+// ledger-push 引的两份:直推清单,和清单读配置用的 lib。沙箱里摆在同样的相对位置。
+const DEPS = ["scripts/lib/direct-push.mjs", ".claude/hooks/lib/config.mjs"];
 const LEDGER = ["journal", "BACKLOG", "session-pool", "gate-log"];
 const BOXES = [];
 
@@ -24,8 +26,17 @@ const g = (dir, ...a) =>
     .replace(/\s+$/, "");
 const gd = (gitdir, ...a) => g(".", `--git-dir=${gitdir}`, ...a);
 
+// 写一组文件(路径 → 内容),目录现建
+const put = (work, files) => {
+  for (const [p, body] of Object.entries(files)) {
+    mkdirSync(dirname0(join(work, p)), { recursive: true });
+    writeFileSync(join(work, p), body);
+  }
+};
+
 // protect: "none" 不拦 | "always" 永远拦 main(main 不动)| "race" 头一次拦并把 main 顶前进
-function sandbox(protect) {
+// extra:跟台账一起进初版提交的文件(项目配置、清单里额外放行的文件……)
+function sandbox(protect, extra = {}) {
   const box = mkdtempSync(join(tmpdir(), "tower-ledger-"));
   BOXES.push(box);
   const origin = join(box, "origin.git"), work = join(box, "work");
@@ -37,6 +48,8 @@ function sandbox(protect) {
   mkdirSync(join(work, ".claude/.session-state"), { recursive: true });
   for (const f of LEDGER) writeFileSync(join(work, `docs/${f}.md`), `# ${f} 初版\n`);
   writeFileSync(join(work, "scripts/ledger-push.mjs"), readFileSync(SCRIPT));
+  put(work, Object.fromEntries(DEPS.map((f) => [f, readFileSync(resolve(f))])));
+  put(work, extra);
   g(work, "add", "-A"); g(work, "commit", "-qm", "初版");
   g(work, "remote", "add", "origin", origin);
   g(work, "push", "-q", "-u", "origin", "main");
@@ -175,9 +188,9 @@ group("D 夹带", () => {
   writeFileSync(join(work, "src/main.py"), "print('代码')\n");
   const { out, code } = runAllowFail(work, "D 夹带代码");
   check("D 夹带代码:拒绝跑(退出码非 0)", code !== 0, `code=${code}`);
-  // git status --porcelain 把**未跟踪目录**折叠成目录名,不展开到文件 ——
-  // 所以这里点名的是 `src/` 而不是 `src/main.py`。拦是拦住了,别当成洞。
-  check("D 夹带代码:点名了那个越界路径", out.includes("src/"), out.slice(0, 200));
+  // 体检带 --untracked-files=all:未跟踪目录展开到文件,点名的是 `src/main.py`,
+  // 不是折叠成的 `src/`(不加这个参数时就是后者)。
+  check("D 夹带代码:点名了那个越界文件(未跟踪目录展开到文件)", out.includes("src/main.py"), out.slice(0, 200));
   check("D 夹带代码:台账没被推上去",
     !gd(origin, "show", "main:docs/journal.md").includes("本塔的行"));
 });
@@ -232,6 +245,118 @@ group("H 并发工作树", () => {
   check("H 并发:退出码 0(没撞上别人的临时分支)", code === 0, `code=${code} ${out.slice(0, 200)}`);
   check("H 并发:台账进了 main", gd(origin, "show", "main:docs/journal.md").includes("本塔的行"));
   check("H 并发:别人那个分支没被删", g(work, "branch", "--list", "_ledger_tmp").includes("_ledger_tmp"));
+});
+
+// ── I:直推清单 = 台账四件 + 配置 directPush(scripts/lib/direct-push.mjs)──────────
+//    额外放行的文件是项目配置(.claude/belltower.json 的 directPush,默认空;开口子先问用户)。
+//    这组钉:配了的能直推、别的照旧拒;没配只有台账四件;写坏了当没配;未跟踪的新文件落在新目录里也认得出;
+//    清单里的文件分支上没有就跳过、不当删除;配成目录不会整个目录放行。
+//    期望的清单写死在这儿,不 import 被测的那份 —— 被测清单写错时,拿它自己当靶子就钉不住了。
+const LEDGER_PATHS = LEDGER.map((n) => `docs/${n}.md`);
+const CFG = ".claude/belltower.json";
+const NOTES = "docs/notes.md";
+const cfgOf = (directPush) => JSON.stringify({ directPush });
+// 拒绝时打印的「直推清单:a · b · …」那一行 = 脚本眼里真正放行的是哪几件
+const allowList = (out) => (out.match(/直推清单:(.*)/)?.[1] ?? "").split(" · ").map((s) => s.trim()).filter(Boolean);
+const sameList = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const mainSha = (origin) => gd(origin, "rev-parse", "main");
+const onMain = (origin, f) => { try { return gd(origin, "show", `main:${f}`); } catch { return null; } };
+const commitOn = (work, files, msg) => { put(work, files); g(work, "add", "-A"); g(work, "commit", "-qm", msg); };
+
+group("I1 配了 directPush", () => {
+  const { origin, work } = sandbox("none", { [CFG]: cfgOf([NOTES]), [NOTES]: "# notes 初版\n" });
+  writeFileSync(join(work, NOTES), "# notes 初版\n本塔的行\n");
+  const { out, code } = runAllowFail(work, "I1 配了的文件直推");
+  check("I1 配了 directPush:退出码 0", code === 0, `code=${code} ${out.slice(0, 200)}`);
+  check("I1 配了 directPush:那件真进了 main(变异:清单不读配置会红)", (onMain(origin, NOTES) ?? "").includes("本塔的行"));
+  check("I1 配了 directPush:没走 PR(不产生 ledger/* 分支)", ledgerBranches(origin).length === 0);
+});
+
+group("I2 配了一件,别的照旧拒", () => {
+  const { origin, work } = sandbox("none",
+    { [CFG]: cfgOf([NOTES]), [NOTES]: "# notes 初版\n", "docs/other.md": "# other 初版\n" });
+  const before = mainSha(origin);
+  writeFileSync(join(work, NOTES), "# notes 初版\n本塔的行\n");
+  writeFileSync(join(work, "docs/other.md"), "# other 初版\n没配的也想跟着上\n");
+  const { out, code } = runAllowFail(work, "I2 夹带没配的文件");
+  check("I2 夹带没配的文件:拒绝跑、点名了它", code !== 0 && out.includes("docs/other.md"), `code=${code} ${out.slice(0, 200)}`);
+  check("I2 夹带没配的文件:配了的那件也没上去(origin/main 没动)", mainSha(origin) === before);
+  check("I2 拒绝时列出的直推清单 = 台账四件 + 配的那件", sameList(allowList(out), [...LEDGER_PATHS, NOTES]), allowList(out).join(","));
+});
+
+group("I3 没配", () => {
+  const { origin, work } = sandbox("none", { [NOTES]: "# notes 初版\n" });
+  const before = mainSha(origin);
+  writeFileSync(join(work, NOTES), "# notes 初版\n本塔的行\n");
+  const { out, code } = runAllowFail(work, "I3 没配");
+  check("I3 没配 directPush:改了台账以外的文件 → 拒绝跑、点名了它", code !== 0 && out.includes(NOTES), `code=${code} ${out.slice(0, 200)}`);
+  check("I3 没配 directPush:origin/main 没动", mainSha(origin) === before);
+  check("I3 没配 directPush:直推清单只有台账四件", sameList(allowList(out), LEDGER_PATHS), allowList(out).join(","));
+});
+
+// 写坏的几种都得「当没配」:改了 NOTES 照样拒,列出的清单只有台账四件(而不是把坏的那项也算进去,或者崩掉)
+group("I4 配置写坏", () => {
+  for (const [tag, cfg] of [
+    ["文件不是合法 JSON", `{"directPush": ["${NOTES}"`],
+    ["directPush 不是数组", JSON.stringify({ directPush: NOTES })],
+    ["写了 ../x", cfgOf(["../x"])],
+    ["写了绝对路径", null],                    // 用沙箱里那件的真路径,沙箱建好再填
+    ["写了通配", cfgOf(["docs/*.md"])],
+    // 代码不进口子:默认 codeDirs 有 src、codeExt 有 ts —— 闸门11 把 ledger/* 当文档 PR,混进代码就能自己合
+    ["写了代码文件", cfgOf(["src/tool.py", "docs/tool.ts"])],
+  ]) {
+    const { origin, work } = sandbox("none", { [NOTES]: "# notes 初版\n" });
+    commitOn(work, { [CFG]: cfg ?? cfgOf([join(work, NOTES)]) }, "本塔分支上的配置");
+    const before = mainSha(origin);
+    writeFileSync(join(work, NOTES), "# notes 初版\n本塔的行\n");
+    const { out, code } = runAllowFail(work, `I4 ${tag}`);
+    check(`I4 ${tag}:当没配 —— 改了 ${NOTES} 照样拒、origin/main 没动`,
+      code !== 0 && out.includes(NOTES) && mainSha(origin) === before, `code=${code} ${out.slice(0, 200)}`);
+    check(`I4 ${tag}:直推清单只有台账四件(变异:不校验会红)`, sameList(allowList(out), LEDGER_PATHS), allowList(out).join(","));
+  }
+});
+
+group("I5 未跟踪的新文件在新目录里", () => {
+  const PLAN = "docs/plans/next.md";
+  const { origin, work } = sandbox("none", { [CFG]: cfgOf([PLAN]) });
+  put(work, { [PLAN]: "# next\n本塔新建的\n" });          // docs/plans/ 整个目录都是新的、未跟踪
+  const { out, code } = runAllowFail(work, "I5 新建");
+  check("I5 清单里的文件头一次新建、目录也是新的:认得出,退出码 0(变异:去掉 --untracked-files=all 会红)",
+    code === 0, `code=${code} ${out.slice(0, 200)}`);
+  check("I5 新建的那件真进了 main", (onMain(origin, PLAN) ?? "").includes("本塔新建的"));
+});
+
+group("I6 清单里的文件分支上没有", () => {
+  {
+    // 项目刚配上、文件还没建:哪儿都没有 → 跳过,台账照常直推
+    const { origin, work } = sandbox("none", { [CFG]: cfgOf(["docs/later.md"]) });
+    writeFileSync(join(work, "docs/journal.md"), "# journal 初版\n本塔的行\n");
+    const { out, code } = runAllowFail(work, "I6a 还没建");
+    check("I6a 配了、还没建的文件:不报错,退出码 0(变异:不跳过会红)", code === 0, `code=${code} ${out.slice(0, 200)}`);
+    check("I6a 台账照常进了 main", (onMain(origin, "docs/journal.md") ?? "").includes("本塔的行"));
+    check("I6a main 上没凭空多出那件", onMain(origin, "docs/later.md") === null);
+  }
+  {
+    // main 上有、本塔分支上删了 → 跳过,main 上那份原样留着(不当成要删)
+    const { origin, work } = sandbox("none", { [CFG]: cfgOf([NOTES]), [NOTES]: "# notes 初版\n" });
+    g(work, "rm", "-q", NOTES); g(work, "commit", "-qm", "本塔分支上删了它");
+    writeFileSync(join(work, "docs/journal.md"), "# journal 初版\n本塔的行\n");
+    const { out, code } = runAllowFail(work, "I6b 分支上删了");
+    check("I6b 分支上没有那件:不报错,退出码 0", code === 0, `code=${code} ${out.slice(0, 200)}`);
+    check("I6b 台账照常进了 main", (onMain(origin, "docs/journal.md") ?? "").includes("本塔的行"));
+    check("I6b main 上那件原样留着(变异:当成删除会红)", onMain(origin, NOTES) === "# notes 初版", String(onMain(origin, NOTES)));
+  }
+});
+
+group("I7 directPush 配成目录", () => {
+  const { origin, work } = sandbox("none", { [CFG]: cfgOf(["docs/specs"]), "docs/specs/a.md": "# a 初版\n" });
+  commitOn(work, { "docs/specs/a.md": "# a 初版\n分支上的半成品\n" }, "本塔分支上改了目录里的文件");
+  writeFileSync(join(work, "docs/journal.md"), "# journal 初版\n本塔的行\n");
+  const { out, code } = runAllowFail(work, "I7 配成目录");
+  check("I7 配成目录:台账照常直推(退出码 0)",
+    code === 0 && (onMain(origin, "docs/journal.md") ?? "").includes("本塔的行"), `code=${code} ${out.slice(0, 200)}`);
+  check("I7 配成目录:目录里分支上的半成品**没**被捎上 main(变异:不认 blob 会红)",
+    onMain(origin, "docs/specs/a.md") === "# a 初版", String(onMain(origin, "docs/specs/a.md")));
 });
 
 // ── E:闸门12 端到端 —— 真脚本进 PR 模式,真收尾闸看得见、合掉之后自清理 ────

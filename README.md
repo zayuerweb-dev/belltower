@@ -33,7 +33,7 @@ Every rule here comes with the lesson that produced it (`docs/principles.md`). E
 | **Workers** | Short-lived sessions a tower spawns for one numbered task. They push a branch or open a PR, and are archived once done. |
 | **Doorbell** | A trigger bound to another session. Firing it wakes that session within seconds, across repos too (same account). The message only says "go read the ledger"; the details live in git. |
 | **Ledger** | Four markdown files on `main`: `docs/BACKLOG.md`, `docs/journal.md`, `docs/session-pool.md` and `docs/gate-log.md`. `scripts/ledger-push.mjs` pushes them straight to `main`, and falls back to a PR when branch protection blocks the push. |
-| **Gates** | Claude Code hooks (`.claude/hooks/`) that stop the known failure modes. Examples: sensitive data copied into the repo, a tower creating a task no user asked for, a "merged" claim not found on `main`, a ledger left on a branch, a context past its budget. Every gate fails open. |
+| **Gates** | Claude Code hooks (`.claude/hooks/`) that stop the known failure modes. Examples: sensitive data copied into the repo, a tower creating a task no user asked for, a "merged" claim not found on `main`, a ledger left on a branch, a context past its budget, a note left for another tower without ringing its doorbell, the same doorbell fired twice. After compaction, a SessionStart hook re-posts the tower's identity and its full skill (the "tower card"). Every gate fails open. |
 | **Routines** | Prompts for the patrol tower's daily patrol and monthly deep restart, and a 10-minute check-in after dispatching (`docs/routines.md`). |
 
 ### The nine towers
@@ -50,7 +50,7 @@ Each tower is one skill file, `.claude/skills/tower-<board>/SKILL.md` (templates
 | `ops` | Running *our* product in production: deploys, backup and restore drills, monitoring, secrets, cutover |
 | `biz` | Sales, customer success, contracts and billing, company affairs |
 | `meta` | The session machine itself: context economy, dispatch, the ledger, gates, tower protocol, toolboxes |
-| `patrol` | Scheduled work: archives finished workers and checks last night's scheduled CI every day, sends findings back to the tower that owns them and re-checks, looks at gate false positives on Mondays, runs the monthly deep restart. Makes no rules, dispatches no workers |
+| `patrol` | Scheduled work: archives finished workers and checks last night's scheduled CI every day, sends findings back to the tower that owns them and re-checks, on Mondays counts how often the user had to repeat something already said or decided and looks at gate false positives, runs the monthly deep restart. Makes no rules, dispatches no workers |
 
 Rules belong to `meta`; checking them belongs to `patrol`. The patrol tower is also the root that reopens the others, so it is opened differently: the user opens it by hand in the sidebar (a top-level session, not one that meta creates with `create_session`), names it `<project>/patrol` and gives it the `tower` and `patrol` tags. It never goes through the monthly deep restart and is never archived; for a fresh start, the user runs `/clear` in it.
 
@@ -128,6 +128,7 @@ It installs the board's skill, appends the board to `boards` (and to `ranges` wh
 | `sensitivePaths.bash` / `.edit` | `sensitive/`, `private-data/`, key files | gates 1–3; empty string turns a gate off |
 | `sensitiveReminder` | iron rule 1 | session-start banner |
 | `timezone` | `America/New_York` | every timestamp |
+| `directPush` | `[]` (only the four ledgers) | ledger-push and gate 12: extra files that may go straight to `main`. Ask the user first; one repo-relative file per entry, no wildcards, no `..` |
 
 The skill prefix is fixed at `tower-`.
 
@@ -184,7 +185,7 @@ MIT — see `LICENSE`.
 | **工人** | 塔为一个编号任务开的短命会话:推分支或开 PR,干完归档 |
 | **门铃** | 绑在另一个会话上的触发器,按一下几秒内叫醒对方,跨仓库也通(同一账号)。消息只说「去读台账」,细节在 git 里 |
 | **台账** | `main` 上四份 markdown:`docs/BACKLOG.md` · `docs/journal.md` · `docs/session-pool.md` · `docs/gate-log.md`;`scripts/ledger-push.mjs` 直推 `main`,被分支保护挡住时自动转 PR |
-| **闸门** | `.claude/hooks/` 里的 hook,拦已知的坑:敏感数据进库、塔自己立了用户没说过的号、「已合」在 `main` 上查不到、台账停在分支上、上下文超预算……全部 fail-open |
+| **闸门** | `.claude/hooks/` 里的 hook,拦已知的坑:敏感数据进库、塔自己立了用户没说过的号、「已合」在 `main` 上查不到、台账停在分支上、上下文超预算、给别的塔留了言没按门铃、同一个门铃按两次……全部 fail-open。压缩之后另有开局 hook 给塔重贴身份和本塔技能全文(「塔卡」) |
 | **例程** | 巡检塔每日巡检、每月深度重开、派工后 10 分钟回查的提示词(`docs/routines.md`) |
 
 ### 九个塔
@@ -202,7 +203,7 @@ MIT — see `LICENSE`.
 | `ops` | **我们自己的产品**怎么跑在线上:部署、备份恢复演练、监控、密钥、切换 |
 | `biz` | 销售、客户成功、合同与计费、公司事务 |
 | `meta` | 会话这台机器本身:上下文经济、派发、台账、闸门、塔协议、各塔工具箱 |
-| `patrol` | 定期的活:每天归档跑完的工人、查昨晚定时 CI,查出来的照「归谁」派回那个塔并回查,周一看闸门误伤,每月深度重开;不定规矩、不派工人 |
+| `patrol` | 定期的活:每天归档跑完的工人、查昨晚定时 CI,查出来的照「归谁」派回那个塔并回查,周一数「又说一遍 / 又答一遍」、看闸门误伤,每月深度重开;不定规矩、不派工人 |
 
 定规矩归 `meta`,查规矩归 `patrol`。巡检塔还是开塔的根,所以开法不一样:**由用户在侧栏亲手开**(顶层会话,不由 meta 用 `create_session` 代开),起名「<项目>/patrol」、补 `tower` / `patrol` 两个标;它不进每月深度重开、永远不归档,要全新就让用户在它的窗口里手动 `/clear`。
 

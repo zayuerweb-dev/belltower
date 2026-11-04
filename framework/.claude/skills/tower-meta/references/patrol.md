@@ -11,7 +11,7 @@
 |---|---|---|
 | 每天 | 第一件 归档跑完的工人 · 第二件 昨晚定时 CI · 派回与回查 | 本页 |
 | 每天(装了才做) | 第三件 跟进巡检 · 第四件 文档写法巡检 | 本页,只留挂点 |
-| 每周一 | 多看一件:闸门误伤(另有两件挂点) | 本页「周一」 |
+| 每周一 | 多看三件:「又说一遍」「又答一遍」两个数 · 闸门误伤 | 本页「周一」 |
 | 每月 1 号 | 深度重开各塔(巡检塔自己除外) | `tower.md`「每月深度重开」,这里不抄 |
 
 做完报用户一张小表(本页末尾),查出来的照「归谁」派回。
@@ -82,8 +82,15 @@
 
 ## 第二件:昨晚定时跑的 CI
 
-**项目有定时跑的 CI 才做**:`.github/workflows/` 里有带 `schedule:` 的 workflow
-(`git grep -l 'schedule:' origin/main -- .github/workflows/`)。没有就跳过,早报写一句「昨晚 CI:没有定时跑的 CI,跳过」。
+**项目有定时跑的 CI 才做**:`.github/workflows/` 里有带 `schedule:` 的 workflow。没有就跳过,早报写一句「昨晚 CI:没有定时跑的 CI,跳过」。
+
+```
+git grep -lE '^[[:space:]]*schedule:|^[^#]*[{,][[:space:]]*schedule:' origin/main -- .github/workflows/
+```
+
+只认真写成键的:块写法(行首缩进后是 `schedule:`)和行内写法(`on: { schedule: … }`);只在注释里提到 `schedule:` 的不算。
+*出处:装了框架的项目里,一个工作流的注释写着「为什么没有 `schedule:`」,裸 `git grep 'schedule:'` 把它认成有定时 CI,
+照下面的查法天天报「没跑」[实测✅ 2026-11-04:注释 / 块写法 / 行内写法三种,这条命令只认后两种]。*
 
 定时 CI 是独立裁判:不管各塔怎么说,它按点在 `main` 上从头跑一遍。没人看结果,红了也没人知道,等于白跑。
 
@@ -130,6 +137,7 @@ gh api repos/<owner>/<repo>/actions/workflows --jq '.workflows[] | [.name,.state
   1. `git show origin/main:.github/workflows/<文件>` 里还有没有 `schedule:`。没有 = 定时配置被改掉了,如实报。
   2. 有的话,查 workflow 停用没有(`list_workflows` 的 `state`)。不是 `active` 就报出来。
   3. 都正常:先当**晚排**,报「到早报时还没排出来,明早补报」;**连着两份早报都没等到**这一次,才算 GitHub 没触发,如实报。
+  - **别自己补跑**:云会话触发不了 `workflow_dispatch`(`platform-facts.md` §5.10)。要补跑,早报里请用户在 GitHub 的 Actions 页手点。
 - **⏸ 被额度拦了**:`conclusion` 是 `failure`,而且**每个 job 的 `steps` 都是 0**(没分到机器)[实测✅ 2026-10,装了框架的项目实测]。
   Actions 分钟数用完就是这样。加不加钱、等不等重置归用户定:早报一句话带过,不写 journal、不按门铃。
 - **✅ 绿**:`conclusion` 是 `success`。附上 run 链接和那次的短 sha。
@@ -169,7 +177,7 @@ gh api repos/<owner>/<repo>/actions/workflows --jq '.workflows[] | [.name,.state
    每一项带一个**稳定的键**:项名 + `文件:行`,或单号 / PR 号 / run 链接。
    第二天靠这个键在 `origin/main` 的 `docs/BACKLOG.md` 里找回「哪天派过」。
 3. **门铃**:`create_trigger`(`persistent_session_id` = `origin/main` 活表里那个塔「会话 ID」格写的 ID,**每次现查,别写死**;
-   不给 cron 也不给 `run_once_at`)→ `fire_trigger`。
+   不给 cron 也不给 `run_once_at`)→ `fire_trigger`。要说的话全写进 `prompt`,`fire_trigger` **不带 `text`**(`platform-facts.md` §1.1)。
    - **送达要核**:回执里的 `cse_<Y>` 去掉前缀,跟目标 `session_<X>` 去掉前缀相等,才算送到。
      往已归档的会话按会当场报错;对方正忙时消息排队,不算没送到(`tower.md`「平台事实」门铃那几条)。
    - **门铃一次一个,别重按旧的** —— 同一个门铃按第二次会掉进新开的空会话。
@@ -177,14 +185,66 @@ gh api repos/<owner>/<repo>/actions/workflows --jq '.workflows[] | [.name,.state
      **一次一轮,别跟对方来回** —— 夜里没人看着,来回转起来停不下。
 4. **已经派过、对方还没改的,不再按门铃。** 从第一次派回那天起数,连着 3 份早报还在 → 早报「拖着的」一行报用户「拖了 N 天」(仍不按门铃)。
 5. **只是告知、不用对方动手的,不按门铃**,回复里写「不按门铃:理由」。
+   收尾的闸门14 认这一句:回复里单独一行以「不按门铃:」开头、后面写了理由,那条留言就放行。
 6. **先留痕,后叫人**:留言写完 → `node scripts/ledger-push.mjs "巡检:派回 …"` → 再按门铃。
 
 ---
 
 ## 周一
 
-- **(a)「又说一遍」次数 —— 挂点**:装了用户原话汇总(框架后续版本才有)才做;没装就跳过,早报不写这一行。
-- **(a′)「又答一遍」次数 —— 挂点**:同上,装了才做。
+- **(a)「又说一遍」次数**:用户原话里带「又忘了 / 我说过 / 再说一遍 / 怎么还是 / 为什么没 / 还是忘」的条数,本周(今天往前 7 天)对上周(再往前 7 天),
+  按原话的日期算。原话由 `scripts/user-quotes.mjs` 从 `origin/main` 的台账现抽。在仓库根跑,输出原样贴进早报:
+
+```
+node scripts/user-quotes.mjs --json | node -e '
+const fs = require("fs");
+// 日子按项目时区算:读 .claude/belltower.json 的 timezone,读不到用 America/New_York(跟 config.mjs 的默认值一致)
+let tz = "America/New_York";
+try {
+  const z = JSON.parse(fs.readFileSync(".claude/belltower.json", "utf8")).timezone;
+  if (typeof z === "string" && z) { new Intl.DateTimeFormat("en-CA", { timeZone: z }); tz = z; }
+} catch {}
+// 今天(项目时区)往前数 n 天:按日历减,夏令时切换那天也不会差一天
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());   // YYYY-MM-DD
+const day = (n) => new Date(Date.parse(today + "T00:00:00Z") - n * 864e5).toISOString().slice(0, 10);
+const re = /又忘了|我说过|再说一遍|怎么还是|为什么没|还是忘/;
+const hit = JSON.parse(fs.readFileSync(0, "utf8")).quotes.filter((q) => re.test(q.text));
+const pick = (a, b) => hit.filter((q) => q.date && q.date >= a && q.date <= b);
+console.log(`又说一遍 · 本周 ${day(6)} 至 ${day(0)} · ${pick(day(6), day(0)).length} 条 · 上周 ${day(13)} 至 ${day(7)} · ${pick(day(13), day(7)).length} 条 · 没日期的 ${hit.filter((q) => !q.date).length} 条`);
+for (const q of pick(day(6), day(0))) console.log(`  ${q.date} ${q.time ?? ""} ${q.tower ?? "?"} 「${q.text}」 ${q.sources.map((s) => s.path + ":" + s.line).join(" ")}`);
+'
+```
+
+- **(a′)「又答一遍」次数**:用户把定过的事又答了一遍 —— 收到答复的塔核出「跟已定的一样」时,规格不改,journal 那行写
+  `〔重申〕(原出处:…)`(`CLAUDE.md`〈板块路由〉顾问姿态「问之前先查已定的」)。本周对上周,按 journal 行首的日期算。
+  **只数带「(原出处」的写法** —— 讲这个标记本身的行(比如「〔重申〕标照办」)不算;括号半角 / 全角都认:
+
+```
+git show origin/main:docs/journal.md | node -e '
+const fs = require("fs");
+// 日子按项目时区算:读 .claude/belltower.json 的 timezone,读不到用 America/New_York(跟 config.mjs 的默认值一致)
+let tz = "America/New_York";
+try {
+  const z = JSON.parse(fs.readFileSync(".claude/belltower.json", "utf8")).timezone;
+  if (typeof z === "string" && z) { new Intl.DateTimeFormat("en-CA", { timeZone: z }); tz = z; }
+} catch {}
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());   // YYYY-MM-DD
+const day = (n) => new Date(Date.parse(today + "T00:00:00Z") - n * 864e5).toISOString().slice(0, 10);
+// 全角括号写成 \uFF08:手打的「全角」常常其实是半角,写码位才保得住
+const re = /〔重申〕[(\uFF08]原出处/;
+const hit = fs.readFileSync(0, "utf8").split("\n").filter((l) => re.test(l))
+  .map((l) => ({ d: (l.match(/^[\s>*-]*(20\d\d-\d\d-\d\d)/) || [])[1] || "", l: l.trim() }));
+const pick = (a, b) => hit.filter((h) => h.d && h.d >= a && h.d <= b);
+console.log(`又答一遍 · 本周 ${day(6)} 至 ${day(0)} · ${pick(day(6), day(0)).length} 条 · 上周 ${day(13)} 至 ${day(7)} · ${pick(day(13), day(7)).length} 条 · 行首没日期的 ${hit.filter((h) => !h.d).length} 条`);
+for (const h of pick(day(6), day(0))) console.log("  " + h.l.slice(0, 200));
+'
+```
+
+两个数是给架构找没接上的环,不是记谁抱怨;基线是本周,应往下走。(a′) 不为零,早报里把那几行的原出处列出来 ——
+哪件事、原来定在哪,那是塔问之前没查到的地方。
+两条命令在框架自己的测试里拿样例台账跑(belltower 仓库的 `scripts/test.mjs`,假时钟钉住「今天」):
+时区读配置、读不到或写坏了用默认值、只数「(原出处」写法、半角 / 全角括号、夏令时切换那天不差一天。
+
 - **(b) 闸门误伤**:`docs/gate-log.md` 过去 7 天按闸门计数,其中「冤」几条、「待判」几条。在仓库根跑,读 `origin/main`,输出原样贴进早报:
 
 ```
@@ -244,7 +304,7 @@ for (const [g, v] of e) console.log(`  ${g} · ${v.n} 次 · 冤 ${v.w} · 待�
 派回:product 2 条、meta 1 条 · 按了 2 个门铃(不按门铃:meta 那条只是告知)
 拖着的:无 / <键> 拖了 N 天(<塔>)· …
 (周一)闸门误伤:过去 7 天 n 次 · 冤 k · 待判 p(已告知 meta)
-(周一)又说一遍 / 又答一遍:……(装了用户原话汇总才有这一行)
+(周一)又说一遍:本周 a 条 · 上周 b 条 · 又答一遍:本周 c 条 · 上周 d 条(不为零的列出那几句 / 原出处)
 跳过:缺 X(用到它的那件今天没做)
 ```
 

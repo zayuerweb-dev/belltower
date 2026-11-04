@@ -336,6 +336,224 @@ execFileSync("git", ["init", "-q"], { cwd: P });
   }
 }
 
+// ── 6. 搬进来的工具:原话汇总 · 巡检周一两条命令 · 外来 skill 不进清单 · tower.md 按节读 · 假时钟跨零点 ──
+// 期望值都写死在这儿。要「今天」的地方一律用假时钟(framework/scripts/fake-clock.mjs)钉住,不靠真钟碰运气。
+{
+  const { pathToFileURL } = await import("node:url");
+  const { DEFAULTS } = await import(pathToFileURL(join(ROOT, "framework/.claude/hooks/lib/config.mjs")).href);
+  const FC = pathToFileURL(join(ROOT, "framework/scripts/fake-clock.mjs")).href;
+  // 挂假时钟的环境:FAKE_START = 假钟从哪一刻起;FAKE_REAL_BASE = 真钟哪一刻对上它(子进程都继承,所以是同一只钟)
+  const clockEnv = (start, base = String(Date.now())) => ({ ...process.env, FAKE_START: start, FAKE_REAL_BASE: base,
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import ${FC}`.trim() });
+  const git = (cwd, ...a) => execFileSync("git", a, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const put = (root, rel, text) => { mkdirSync(dirname(join(root, rel)), { recursive: true }); writeFileSync(join(root, rel), text); };
+  // markdown 里的代码块:跟第 5 节同一个认法(围栏可缩进,去掉围栏那层缩进)
+  const blocksOf = (md) => [...md.replace(/\r\n/g, "\n").matchAll(/^([ \t]*)```[^\n]*\n([\s\S]*?)\n\1```[ \t]*$/gm)]
+    .map(([, ind, body]) => body.split("\n").map((l) => (l.startsWith(ind) ? l.slice(ind.length) : l)).join("\n"));
+  const fails = (out) => out.split("\n").filter((l) => /FAIL/.test(l)).join(" | ");
+
+  // 一个装好的项目,带 origin、main 推上去了:6a–6c 在它里面跑
+  const F = tmp("bt-v031-");
+  git(F, "init", "-q", "-b", "main");
+  git(F, "config", "user.email", "t@example.com"); git(F, "config", "user.name", "t");
+  node(join(ROOT, "scripts/belltower-init.mjs"), [F]);
+  const ORIGIN = join(tmp("bt-v031-origin-"), "o.git");
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", ORIGIN]);
+  git(F, "remote", "add", "origin", ORIGIN);
+  git(F, "add", "-A"); git(F, "commit", "-qm", "init"); git(F, "push", "-q", "-u", "origin", "main");
+
+  // 6a. 两套新自测:本仓库跑一遍,装好的项目里再跑一遍(证明装进去之后路径照样对得上)
+  for (const [name, script] of [["原话汇总", "scripts/test-user-quotes.mjs"], ["假时钟", "scripts/test-fake-clock.mjs"]]) {
+    for (const [where, cwd] of [["", join(ROOT, "framework")], ["装好的项目里", F]]) {
+      const r = node(script, [], cwd);
+      const c = counts(r.stdout);
+      assert(`${where}${name}自测全绿(${c ? `${c[0]} passed, ${c[1]} failed` : "没读到计数"})`,
+        r.status === 0 && c && c[1] === 0 && c[0] > 0, fails(r.stdout) || r.stderr.slice(0, 300));
+    }
+  }
+
+  // 6b. 刚装好的项目只有模板:一条原话都不该扫出来(模板里的示例行、讲规矩的句子都不算)
+  {
+    const r = node("scripts/user-quotes.mjs", ["--json"], F);
+    let j = null; try { j = JSON.parse(r.stdout); } catch {}
+    assert("刚装好的项目(只有模板)原话汇总扫出 0 条:模板里的示例行、讲规矩的句子都不算",
+      r.status === 0 && j && j.files > 0 && j.quotes.length === 0,
+      j ? j.quotes.map((q) => `${q.sources[0]?.path}:${q.sources[0]?.line}「${q.text}」`).join(" | ") : r.stderr.slice(0, 300));
+  }
+
+  // 6c. 巡检周一 (a)(a′):命令从 patrol.md 的代码块里原样抠出来跑(跟第 5 节一样,不在这儿另抄一份)
+  {
+    const md = readFileSync(join(ROOT, "framework/.claude/skills/tower-meta/references/patrol.md"), "utf8");
+    const cmdA = blocksOf(md).filter((b) => b.includes("user-quotes.mjs --json"));
+    const cmdB = blocksOf(md).filter((b) => b.includes("〔重申〕"));
+    assert("patrol.md 里 (a)「又说一遍」、(a′)「又答一遍」的命令各恰好一块", cmdA.length === 1 && cmdB.length === 1, `(a) ${cmdA.length} 块,(a′) ${cmdB.length} 块`);
+    // 〔重申〕的写法从模板里抠:模板教塔怎么写,巡检就得数得到这种写法
+    const tpl = readFileSync(join(ROOT, "framework/templates/CLAUDE.md"), "utf8");
+    const mark = (tpl.match(/`(〔重申〕[^`]*)`/) ?? [])[1] ?? "(模板里没找到〔重申〕的写法)";
+    const FW_LP = String.fromCharCode(0xFF08);   // 全角左括号:用码位拼,手打的「全角」常常其实是半角
+    put(F, "docs/journal.md", [
+      "# 行为流水", "",
+      "- 2031-02-24 10:00 · plan · 某事 · 用户 2031-02-24 09:50 原话「再说一遍,列表要分页」",
+      "- 2031-02-26 09:00 · plan · 某事 · 〔重申〕(原出处:docs/design/list.md 第 2 节)",
+      "- 2031-03-03 11:00 · dev · 某事 · 用户 2031-03-03 10:40 原话「又忘了加搜索框」",
+      `- 2031-03-03 11:05 · dev · 某事 · 〔重申〕${FW_LP}原出处:2031-02-20 的原话)`,
+      "- 2031-03-05 09:00 · product · 某事 · 用户 2031-03-05 08:50 原话「列表页先这样」",
+      "- 2031-03-09 10:00 · product · 定列表页 · 用户 2031-03-09 09:40 原话「怎么还是没改」",
+      "- 2031-03-09 10:05 · product · 定列表页 · 〔重申〕(原出处:docs/design/list.md 第 2 节)",
+      `- 2031-03-10 08:00 · plan · 某事 · ${mark}`,
+      "- 2031-03-10 09:00 · meta · 某事 · 用户 2031-03-10 08:30 原话「我说过表头要固定」",
+      "- 2031-03-10 09:10 · meta · 某事 · 用户 2031-03-10 08:45 原话「为什么没发早报」",
+      "- 2031-03-10 09:20 · meta · 〔重申〕标照办,以后照这个记",
+      "  〔重申〕(原出处:接着上一行写的,行首没日期)",
+      "", "## 杂记", "", "用户原话「为什么没按上次说的做」", ""].join("\n"));
+    git(F, "add", "-A"); git(F, "commit", "-qm", "样例台账"); git(F, "push", "-q", "origin", "main");
+    const cfgPath = join(F, ".claude/belltower.json");
+    const cfg0 = readFileSync(cfgPath, "utf8");
+    const withTz = (tz) => {
+      const c = JSON.parse(cfg0);
+      if (tz === undefined) delete c.timezone; else c.timezone = tz;
+      writeFileSync(cfgPath, JSON.stringify(c, null, 2) + "\n");
+    };
+    const run = (cmd, start) => {
+      const r = spawnSync("bash", ["-c", cmd ?? "exit 1"], { cwd: F, env: clockEnv(start), encoding: "utf8" });
+      return { first: (r.stdout ?? "").split("\n")[0], out: r.stdout ?? "", detail: `code=${r.status} ${(r.stderr ?? "").slice(0, 200)}` };
+    };
+    // T1 = 2031-03-10T02:00Z:美东是 3/9 晚上 10 点,基里巴斯(+14)已经是 3/10。
+    // T2 = 04:30Z:美东 3/10 凌晨 0:30,夏令时 3/9 刚切换 —— 拿「现在 − n×24 小时」算日子的话,往前数会少一天。
+    const T1 = "2031-03-10T02:00:00Z", T2 = "2031-03-10T04:30:00Z";
+    const A_39 = "又说一遍 · 本周 2031-03-03 至 2031-03-09 · 2 条 · 上周 2031-02-24 至 2031-03-02 · 1 条 · 没日期的 1 条";
+    const A_310 = "又说一遍 · 本周 2031-03-04 至 2031-03-10 · 3 条 · 上周 2031-02-25 至 2031-03-03 · 1 条 · 没日期的 1 条";
+    const B_39 = "又答一遍 · 本周 2031-03-03 至 2031-03-09 · 2 条 · 上周 2031-02-24 至 2031-03-02 · 1 条 · 行首没日期的 1 条";
+    const B_310 = "又答一遍 · 本周 2031-03-04 至 2031-03-10 · 2 条 · 上周 2031-02-25 至 2031-03-03 · 2 条 · 行首没日期的 1 条";
+    for (const [label, tz, start, wantA, wantB] of [
+      ["配置写 America/New_York(那边还是 3/9)", "America/New_York", T1, A_39, B_39],
+      ["时区从配置读:Pacific/Kiritimati 那边已经 3/10", "Pacific/Kiritimati", T1, A_310, B_310],
+      ["配置没写 timezone → 用 America/New_York", undefined, T1, A_39, B_39],
+      ["timezone 写坏了 → 不崩,用 America/New_York", "Mars/Olympus", T1, A_39, B_39],
+      ["夏令时刚切换、美东凌晨 0:30:按日历往前数,窗口不少一天", undefined, T2, A_310, B_310],
+    ]) {
+      withTz(tz);
+      const a = run(cmdA[0], start), b = run(cmdB[0], start);
+      assert(`巡检周一 (a) ${label}`, a.first === wantA, `要「${wantA}」,得「${a.first}」 ${a.detail}`);
+      assert(`巡检周一 (a′) ${label}`, b.first === wantB, `要「${wantB}」,得「${b.first}」 ${b.detail}`);
+    }
+    // 早报要列出本周那几条:原话带出处;(a′) 只列带「(原出处」的行
+    withTz("America/New_York");
+    const a = run(cmdA[0], T1), b = run(cmdB[0], T1);
+    const aList = a.out.split("\n").slice(1).filter(Boolean), bList = b.out.split("\n").slice(1).filter(Boolean);
+    assert("巡检周一 (a) 逐条列出本周那几句原话和出处(上周的不列)",
+      aList.length === 2 && /「又忘了加搜索框」 docs\/journal\.md:\d+/.test(a.out) && /「怎么还是没改」/.test(a.out) && !aList.some((l) => l.includes("再说一遍")), a.out);
+    assert("巡检周一 (a′) 逐条列出本周那几行(讲标记本身的那行不算)", bList.length === 2 && !/标照办/.test(b.out), b.out);
+    assert("模板里教的〔重申〕写法,(a′) 数得到", mark.startsWith("〔重申〕") && run(cmdB[0], T2).out.includes(mark), mark);
+    writeFileSync(cfgPath, cfg0);
+  }
+
+  // 6d. 外来 skill 默认不进技能清单:拷进来的 SKILL.md 补 disable-model-invocation: true;--keep-in-list 不补
+  {
+    const U = tmp("bt-kwp-");
+    git(U, "init", "-q", "-b", "main");
+    git(U, "config", "user.email", "t@example.com"); git(U, "config", "user.name", "t");
+    put(U, "LICENSE", "Apache-2.0(测试夹具)\n");
+    put(U, "alpha/skills/foo/SKILL.md", "---\nname: foo\ndescription: 示例 skill 甲\n---\n\n# foo\n正文第一行\nname: 正文里这行不是 frontmatter\n");
+    put(U, "alpha/skills/bar/SKILL.md", "---\nname: bar\ndisable-model-invocation: false\ndescription: 上游自己写了 false\n---\n正文\n");
+    put(U, "alpha/skills/nofm/SKILL.md", "# 没有 frontmatter 的\n");
+    put(U, "alpha/skills/empty/README.md", "没有 SKILL.md\n");
+    put(U, "beta/skills/qux/SKILL.md", "---\nname: qux\ndescription: 没选的插件\n---\n");
+    git(U, "add", "-A"); git(U, "commit", "-qm", "上游");
+    const V = tmp("bt-vendor-");
+    const vend = (...a) => node(join(ROOT, "framework/scripts/vendor-skills.mjs"), ["--src", U, "--plugins", "alpha", ...a], V);
+    const rd = (f) => (existsSync(join(V, ".claude/skills", f)) ? readFileSync(join(V, ".claude/skills", f), "utf8") : null);
+    const BODY = "\n# foo\n正文第一行\nname: 正文里这行不是 frontmatter\n";
+    const r = vend();
+    assert("vendor-skills:frontmatter 改名、紧跟一行 disable-model-invocation: true;正文一个字不动(正文里的 name: 行也不动)",
+      r.status === 0 && rd("alpha-foo/SKILL.md") === "---\nname: alpha-foo\ndisable-model-invocation: true\ndescription: 示例 skill 甲\n---\n" + BODY,
+      (r.stdout + r.stderr).slice(0, 300) + " | " + rd("alpha-foo/SKILL.md"));
+    const bar = rd("alpha-bar/SKILL.md") ?? "";
+    assert("vendor-skills:上游写了 disable-model-invocation: false → 改成 true,不重复一行",
+      (bar.match(/^disable-model-invocation:/gm) ?? []).length === 1 && /^disable-model-invocation: true$/m.test(bar), bar);
+    assert("vendor-skills:没 frontmatter 的跳过并报出来;没选的插件、没 SKILL.md 的目录不拷",
+      rd("alpha-nofm/SKILL.md") === null && /alpha-nofm.*没有 frontmatter/.test(r.stderr) && rd("beta-qux/SKILL.md") === null &&
+      !existsSync(join(V, ".claude/skills/alpha-empty")), r.stderr);
+    const man = rd("VENDORED.md") ?? "";
+    assert("vendor-skills:VENDORED.md 写明加了 disable-model-invocation、怎么取消(--keep-in-list)",
+      /^- `alpha-foo`/m.test(man) && /^- `alpha-bar`/m.test(man) && man.includes("disable-model-invocation: true") && man.includes("--keep-in-list"), man.slice(0, 400));
+    vend();
+    assert("vendor-skills 重跑:还是恰好一行 disable-model-invocation", ((rd("alpha-foo/SKILL.md") ?? "").match(/^disable-model-invocation:/gm) ?? []).length === 1, rd("alpha-foo/SKILL.md"));
+    const k = vend("--keep-in-list");
+    assert("vendor-skills --keep-in-list:不加这一行,上游写的原样留着",
+      k.status === 0 && rd("alpha-foo/SKILL.md") === "---\nname: alpha-foo\ndescription: 示例 skill 甲\n---\n" + BODY &&
+      /^disable-model-invocation: false$/m.test(rd("alpha-bar/SKILL.md") ?? "") && /--keep-in-list/.test(rd("VENDORED.md") ?? ""),
+      rd("alpha-foo/SKILL.md") + " | " + rd("alpha-bar/SKILL.md"));
+  }
+
+  // 6e. tower.md 开头的「按节读」索引:每个 `## ` 节恰好一行;开局读哪几节前后说法一致;切节命令切得出那一节
+  {
+    const md = readFileSync(join(ROOT, "framework/.claude/skills/tower-meta/references/tower.md"), "utf8").replace(/\r\n/g, "\n");
+    const lines = md.split("\n");
+    const heads = lines.filter((l) => l.startsWith("## ")).map((l) => l.slice(3));
+    const hi = lines.findIndex((l) => l.startsWith("| 节"));
+    const rows = [];
+    for (let i = hi + 2; hi >= 0 && i < lines.length && lines[i].startsWith("|"); i++) rows.push(lines[i].split("|").map((s) => s.trim()).slice(1, 3));
+    const names = rows.map((r) => r[0]);
+    const lostHeads = heads.filter((h) => names.filter((n) => h.startsWith(n)).length !== 1);
+    const lostRows = names.filter((n) => heads.filter((h) => h.startsWith(n)).length !== 1);
+    assert(`tower.md 按节读:${heads.length} 个 \`## \` 节各对上索引里恰好一行,索引没有多的行`,
+      heads.length > 0 && !lostHeads.length && !lostRows.length && names.length === heads.length,
+      `没对上的节:${lostHeads.join(" / ")};没对上的行:${lostRows.join(" / ")}`);
+    const said = [...(lines.find((l) => l.startsWith("**按节读")) ?? "").matchAll(/「([^」]+)」/g)].map((m) => m[1]);
+    const startup = rows.filter((r) => /每次开局/.test(r[1] ?? "")).map((r) => r[0]);
+    assert("tower.md 按节读:开头那句「开局只读哪几节」= 表里标「每次开局」的那几行",
+      startup.length > 0 && JSON.stringify(said) === JSON.stringify(startup), `开头说 ${said.join("、")};表里 ${startup.join("、")}`);
+    const cmd = blocksOf(md).filter((b) => b.startsWith("awk "));
+    const D = tmp("bt-tower-");
+    put(D, ".claude/skills/tower-meta/references/tower.md", md);
+    const s = lines.findIndex((l) => l.startsWith("## 塔的开局动作"));
+    const e = lines.findIndex((l, i) => i > s && l.startsWith("## "));
+    const want = lines.slice(s, e).join("\n") + "\n";
+    const r = spawnSync("bash", ["-c", cmd[0] ?? "exit 1"], { cwd: D, encoding: "utf8" });
+    assert("tower.md 按节读:切节命令只有一条,切出来恰好是「塔的开局动作」整节",
+      cmd.length === 1 && s > 0 && e > s && r.stdout === want, `命令 ${cmd.length} 条;切出 ${(r.stdout ?? "").split("\n").length} 行,要 ${want.split("\n").length} 行`);
+  }
+
+  // 6f. 顾问姿态第 0 步「问之前先查已定的」:模板和 architecture §4 都有
+  {
+    const tpl = readFileSync(join(ROOT, "framework/templates/CLAUDE.md"), "utf8");
+    const posture = tpl.split("\n").find((l) => l.startsWith("**各板块共用一种顾问姿态**")) ?? "";
+    assert("模板顾问姿态那行:第一步是「问之前先查已定的」", /\*\*问之前先查已定的\*\*\s*\S\s*先讲清词/.test(posture), posture);
+    assert("模板写了查到相关的怎么问(带日期、塔、原话)和〔重申〕(原出处 标", tpl.includes("说过「<原话>」」,再只问差在哪") && /`〔重申〕\(原出处/.test(tpl));
+    const sec4 = readFileSync(join(ROOT, "docs/architecture.md"), "utf8").split(/^## /m).find((x) => x.startsWith("4. 顾问姿态")) ?? "";
+    const i0 = sec4.indexOf("0. **问之前先查已定的**"), i1 = sec4.indexOf("1. **先讲清**");
+    assert("architecture §4 加了第 0 步「问之前先查已定的」,排在「先讲清」前面", i0 >= 0 && i1 > i0, sec4.slice(0, 200));
+  }
+
+  // 6g. 假时钟跨零点:把框架自测放到项目时区 23:59:59 起跑。测试开头钉了 BELLTOWER_NOW,hook 都走 lib/now.mjs;
+  //     哪处绕开钉子现取「今天」,跑到零点后就跟测试算的差一天 —— 只靠真钟,得碰巧半夜跑才看得见。
+  {
+    const TZ = DEFAULTS.timezone;   // framework/ 下没有 belltower.json → 自测跑在默认时区
+    const off = (t) => {   // 那一刻 TZ 的 UTC 偏移(分钟),现取,不写死 −04 / −05
+      const s = new Intl.DateTimeFormat("en-US", { timeZone: TZ, timeZoneName: "longOffset" }).formatToParts(t).find((p) => p.type === "timeZoneName")?.value ?? "";
+      const m = s.match(/GMT([+-])(\d\d):(\d\d)/);
+      return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
+    };
+    const day = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
+    let start = Date.parse(`${day}T23:59:59Z`);
+    for (let k = 0; k < 2; k++) start = Date.parse(`${day}T23:59:59Z`) - off(new Date(start)) * 60000;
+    const wall = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(start);
+    const probe = spawnSync(process.execPath, ["-e", "console.log(Date.now())"], { env: clockEnv(new Date(start).toISOString()), encoding: "utf8" });
+    const seen = Number((probe.stdout ?? "").trim());
+    assert(`假时钟挂上了:起点是 ${TZ} 的 23:59:59,子进程读到的就是这一刻`, wall === "23:59:59" && seen >= start && seen < start + 5000,
+      `起点 ${wall};子进程读到 ${probe.stdout} ${(probe.stderr ?? "").slice(0, 200)}`);
+    const spawnAt = Date.now();
+    const r = spawnSync(process.execPath, ["scripts/test-hooks.mjs"], { cwd: join(ROOT, "framework"), env: clockEnv(new Date(start).toISOString(), String(spawnAt)), encoding: "utf8" });
+    const took = Date.now() - spawnAt;
+    const c = counts(r.stdout ?? "");
+    assert(`假时钟:框架自测从 23:59:59 起跑、跑过零点仍全绿(${c ? `${c[0]} passed, ${c[1]} failed` : "没读到计数"},跑了 ${(took / 1000).toFixed(1)} 秒)`,
+      r.status === 0 && c && c[1] === 0 && c[0] > 0 && took > 1500, fails(r.stdout ?? "") || (r.stderr ?? "").slice(0, 300));
+    rmSync(join(ROOT, "framework/.claude/.session-state"), { recursive: true, force: true });
+    rmSync(join(ROOT, "framework/docs"), { recursive: true, force: true });
+  }
+}
+
 for (const d of tmps) rmSync(d, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
