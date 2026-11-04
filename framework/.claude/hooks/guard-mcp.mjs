@@ -163,7 +163,9 @@ if (/create_session$/.test(tool) && !has("dispatch-reminded")) {
 //   轮次 = 这一家(基号相同 + 任务书「返工自 Qnnn」并进来的家)在 origin/main 已合的不同号 ∪ 这次的号;
 //   (a) 轮次 > 上限(配置 brakeRounds,默认 3;0 = 关掉这一半),任务书没有查得到的点头行 → 软拦,每家一次(旗标 brake-rounds:<基号>);
 //   (b) 任务书带〔待用户〕,没有查得到的点头行 → 软拦一次(旗标 brake-pending-user)。
-//   点头行 = `用户点头:「原话」(日期 时刻,哪个塔)`,原话要在 origin/main 的 BACKLOG / journal 里查得到。
+//   点头行 = `用户点头:「原话」(日期 时刻,哪个塔)`,原话要在 origin/main 的 BACKLOG / journal 里查得到,
+//   而且**同一行**写着这次派的号(或这一家的号 + 「第 N 轮」,N = 这次的轮次)—— 一次点头管一轮,
+//   同一句贴进别的号、别的轮次的任务书不算(装了框架的项目复现过:一句点头放行了两个号)。
 // 只读 `git show / git log origin/main`,不 fetch(钩子里不碰网络);(a)(b) 各自 try,任何一步出错放行(fail-open)。
 // ⚠ 已知的洞:点头行只证明「台账里有这句话」,证明不了是用户说的 —— 塔自己往台账写一句再引用,闸就过了。
 //   〔待用户〕也一样:product 不标,闸就看不见。
@@ -182,33 +184,38 @@ if (/create_session$/.test(tool)) {
       }
       return ledger;
     };
+    // 这次派的号 · 这一家 · 第几轮:(a)(b) 共用;点头行要跟这个号绑(一次点头管一轮)。读不出就各自降级。
+    const title = prompt.split("\n").find((l) => /^# /.test(l)) ?? String(input.tool_input?.title ?? "");
+    let board = null;
+    try { board = whoAmI().board; } catch {}
+    const q = bk.firstQ(title, bk.rangeDigit(board, cfg.ranges));
+    let fam = null;                                                     // { family, merged, round };git 读不了 → null
+    try { if (q) fam = bk.familyRounds(q.no, bk.reworkBases(prompt), bk.deliveries(git(...bk.LOG_ARGS, "origin/main"))); } catch {}
+    const bind = q ? { no: q.no, bases: fam?.family ?? [q.base], round: fam?.round ?? null } : null;
     const nods = bk.nodQuotes(prompt);
-    const nodOk = () => nods.some((q) => bk.quoteInLedger(q, ledgerText()));
+    const nodOk = () => nods.some((x) => bk.quoteInLedger(x, ledgerText(), bind));
     const nodNote = () => nods.length
-      ? `\n  ★ 任务书里有「用户点头:」,但**台账里没找到这句**(${nods.map((q) => `「${q}」`).join(" ")})—— 先让原话落进 origin/main 的 BACKLOG / journal。\n`
+      ? `\n  ★ 任务书里有「用户点头:」,但**台账里没找到这句${q ? `和 ${q.no} 写在同一行` : ""}**(${nods.map((x) => `「${x}」`).join(" ")})` +
+        `—— 先让原话落进 origin/main 的 BACKLOG / journal,${q ? `同一行写上 ${q.no}(或「${q.base} 第 ${fam?.round ?? "N"} 轮」)` : "同一行写上这次派的号"}。` +
+        `一次点头管一轮:别的号、别的轮次的点头不算。\n`
       : "";
-    const nodHow = `      用户点头:「原话」(日期 时刻,哪个塔)\n`;
+    const nodHow = `      用户点头:「原话」(日期 时刻,哪个塔)\n` +
+      `    台账里那句原话的**同一行**要写着这次派的号${q ? `(${q.no},或「${q.base} 第 ${fam?.round ?? "N"} 轮」)` : ""}。\n`;
 
     // (a) 同一家封顶
     const cap = cfg.brakeRounds;
-    if (cap > 0) try {
-      const title = prompt.split("\n").find((l) => /^# /.test(l)) ?? String(input.tool_input?.title ?? "");
-      let board = null;
-      try { board = whoAmI().board; } catch {}
-      const q = bk.firstQ(title, bk.rangeDigit(board, cfg.ranges));
-      if (q) {
-        const { family, merged, round } = bk.familyRounds(q.no, bk.reworkBases(prompt), bk.deliveries(git(...bk.LOG_ARGS, "origin/main")));
-        const key = `brake-rounds:${q.base}`;
-        if (round > cap && !has(key) && !nodOk()) {
-          remember(key);
-          deny(`闸门17 派工刹车:${q.no} 是 ${family.join(" + ")} 这一家的**第 ${round} 轮**(上限 ${cap},再派要用户点头)。已合进 main 的:\n` +
-               merged.map((d) => `  · ${d.q} · #${d.pr} · ${bk.fmtTime(d.at, cfg.timezone)}`).join("\n") + "\n" + nodNote() +
-               `\n  规矩:同一件东西改到第 ${cap} 轮就停下等用户看(dispatch.md「刹车」)—— 环里得有「停」。\n` +
-               `  先写给用户:还剩什么、这几轮花了多少(各工人会话 get_session 的 external_metadata.usage.cost_usd 加起来)、选项、推荐。\n\n` +
-               `  放行:用户点了头、原话落进台账之后,任务书加一行\n` + nodHow +
-               `  一次点头管一轮。**不是返工、只是号撞了家**,就原样再来一次(每家拦一次)。\n` +
-               `  现数:node scripts/brake.mjs rounds ${q.no}`);
-        }
+    if (cap > 0 && q && fam) try {
+      const { family, merged, round } = fam;
+      const key = `brake-rounds:${q.base}`;
+      if (round > cap && !has(key) && !nodOk()) {
+        remember(key);
+        deny(`闸门17 派工刹车:${q.no} 是 ${family.join(" + ")} 这一家的**第 ${round} 轮**(上限 ${cap},再派要用户点头)。已合进 main 的:\n` +
+             merged.map((d) => `  · ${d.q} · #${d.pr} · ${bk.fmtTime(d.at, cfg.timezone)}`).join("\n") + "\n" + nodNote() +
+             `\n  规矩:同一件东西改到第 ${cap} 轮就停下等用户看(dispatch.md「刹车」)—— 环里得有「停」。\n` +
+             `  先写给用户:还剩什么、这几轮花了多少(各工人会话 get_session 的 external_metadata.usage.cost_usd 加起来)、选项、推荐。\n\n` +
+             `  放行:用户点了头、原话落进台账之后,任务书加一行\n` + nodHow +
+             `  一次点头管一轮。**不是返工、只是号撞了家**,就原样再来一次(每家拦一次)。\n` +
+             `  现数:node scripts/brake.mjs rounds ${q.no}`);
       }
     } catch {}
 

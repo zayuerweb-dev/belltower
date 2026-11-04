@@ -29,3 +29,11 @@ export function ymd() {
   }).format(d);
   return p; // YYYY-MM-DD
 }
+
+// 某一时刻在某时区的墙钟:{ year, month, day, hour, minute }(都是两位 / 四位字符串,小时 00–23)。
+// 别的地方要按时区取年月日时分,一律调这个,别自己再写一份 Intl(lib/brake.mjs 就是这么改过来的)。
+export function wallParts(t, tz = TZ()) {
+  return Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+    .formatToParts(new Date(t)).filter((x) => x.type !== "literal").map((x) => [x.type, x.value]));
+}

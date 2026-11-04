@@ -5,6 +5,7 @@
 // ★ 全角字一律码位拼(String.fromCharCode),不直接敲进正则:源码里看不出全角半角,敲错一个就悄悄只认一种。
 import { config } from "./config.mjs";
 import { ringLine } from "./doorbell.mjs";
+import { wallParts } from "./now.mjs";
 
 const CH = (...cs) => String.fromCharCode(...cs);
 
@@ -124,9 +125,8 @@ export function batchItems(backlogText, boards = null) {
 
 // ── 时刻(项目时区)──────────────────────────────────────────────────────
 const tzOf = (tz) => { try { return tz ?? config().timezone; } catch { return "UTC"; } };
-const partsIn = (t, tz) => Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23",
-  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-  .formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+// 按时区取墙钟走 lib/now.mjs 那一份(全框架只许一份时区实现,项目的规矩也是这么查的)。
+const partsIn = (t, tz) => wallParts(t, tz);
 // 项目时区的 YYYY-MM-DD HH:MM
 export function fmtTime(t, tz = null) {
   try { const p = partsIn(t, tzOf(tz)); return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`; } catch { return "?"; }
@@ -162,6 +162,22 @@ export function variantsOf(seg) {
   for (const a of [s, spaced, unspaced]) for (const b of [a, swapWidth(a, FULLW, HALFW), swapWidth(a, HALFW, FULLW)]) out.add(b);
   return [...out];
 }
+// 点头绑号:台账里**同一行**既有这句原话、又有这次派的号 —— 一次点头管一轮,换个号 / 换一轮就不认。
+//   bind = { no: 这次派的号, bases: 这一家的基号(含「返工自」并进来的), round: 这次是第几轮(算不出就 null) }
+//   同一行认两种写法:写着这次的号本身(Q361d);或写着这一家的号 + 「第 N 轮」(Q361 第 5 轮,N = 这次的轮次)。
+//   bind 为空(任务书里认不出号)→ 只认原话,绑不了号。
 // ⚠ 只证明「台账里有这句话」,证明不了是用户说的 —— 塔自己写一句再引用就过了(已知的洞)。
-export const quoteInLedger = (quote, ledgerText) => !!String(quote ?? "") &&
-  variantsOf(String(quote)).some((v) => String(ledgerText ?? "").includes(v));
+export function quoteInLedger(quote, ledgerText, bind = null) {
+  const q = String(quote ?? "");
+  if (!q) return false;
+  const vs = variantsOf(q);
+  const lines = String(ledgerText ?? "").split("\n").filter((l) => vs.some((v) => l.includes(v)));
+  if (!bind?.no) return lines.length > 0;
+  const bases = new Set([baseOf(bind.no), ...(bind.bases ?? [])].filter(Boolean));
+  const roundRe = Number.isInteger(bind.round) && bind.round > 0 ? new RegExp(`第\\s*${bind.round}\\s*轮`) : null;
+  return lines.some((l) => {
+    const nos = qNos(l);
+    if (nos.some((x) => x.no === bind.no)) return true;
+    return !!roundRe && roundRe.test(l) && nos.some((x) => bases.has(x.base));
+  });
+}

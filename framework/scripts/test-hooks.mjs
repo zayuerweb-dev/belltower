@@ -1334,8 +1334,9 @@ for (const tz of BAD_TZ) {
     `- 2031-01-10 13:00 · test → product ${BATCH} · 文案问题`,
     "- 2031-01-10 14:00 · test → dev · 页面报错(阻塞)", ""].join("\n");
   const JOURNAL = ["# journal", "",
-    "- 2031-01-11 09:00 · dev · 用户 2031-01-11 08:50 原话「第四轮可以做,做完停」",
-    `- 2031-01-11 09:10 · dev · 用户 2031-01-11 09:05 原话「再做一轮${FW(0xFF1A)}修好 API」`, ""].join("\n");
+    "- 2031-01-11 09:00 · dev · Q301d · 用户 2031-01-11 08:50 原话「第四轮可以做,做完停」",
+    `- 2031-01-11 09:10 · dev · Q301 第 4 轮 · 用户 2031-01-11 09:05 原话「再做一轮${FW(0xFF1A)}修好 API」`,
+    "- 2031-01-11 09:20 · product · Q310 · 用户 2031-01-11 09:15 原话「列表倒序可以」", ""].join("\n");
   // [时刻, 标题] —— 标题以 (#n) 结尾的是 squash;"merge:" 开头的造一个普通合并提交(正文第一行 = PR 标题)
   const MERGES = [
     ["2030-12-01T10:00:00Z", "Q304 · a (#1)"], ["2030-12-01T11:00:00Z", "Q304b · a (#2)"],
@@ -1434,6 +1435,23 @@ for (const tz of BAD_TZ) {
   r = go(tb("Q301d", "用户点头:「随便做吧我不管了」(2031-01-11 10:00,dev 塔)\n"));
   assert("闸17 红:点头行有,但原话台账里没有 → 照拦,写明「台账里没找到这句」",
     denied(r) && /台账里没找到这句/.test(r.err) && /随便做吧我不管了/.test(r.err), r.err.slice(0, 300));
+  // 点头绑号:一次点头管一轮(装了框架的项目复现过:同一句贴进别的号也放行)
+  r = go(tb("Q36d", "用户点头:「第四轮可以做,做完停」(2031-01-11 08:50,dev 塔)\n"));
+  assert("闸17 红:同一句点头贴进另一家(Q36d)的任务书 → 台账那行写的是 Q301d,不认,照拦",
+    denied(r) && /台账里没找到这句和 Q36d 写在同一行/.test(r.err), r.err.slice(0, 300));
+  r = go(tb("Q301e", "用户点头:「第四轮可以做,做完停」(2031-01-11 08:50,dev 塔)\n"));
+  assert("闸17 红:同一家换个号(Q301e),台账那行只写着 Q301d、没写轮次 → 不认", denied(r) && /Q301e/.test(r.err), r.err.slice(0, 300));
+  r = go(tb("Q301e", "用户点头:「再做一轮:修好API」(2031-01-11 09:05,dev 塔)\n"));
+  assert("闸17 绿:台账那行写「Q301 第 4 轮」,派的是这一家第 4 轮(Q301e)→ 认", allowed(r), r.err.slice(0, 200));
+  r = go(tb("Q305", "返工自 Q301\n用户点头:「再做一轮:修好API」(2031-01-11 09:05,dev 塔)\n"));
+  assert("闸17 绿:「返工自 Q301」并进来的家,台账写「Q301 第 4 轮」也认", allowed(r), r.err.slice(0, 200));
+  assert("刹车 lib:点头绑号 —— 台账「Q361 第 4 轮」那句:Q361d 第 4 轮认,第 5 轮、别家 Q362、Q3610 都不认;不给 bind 只认原话",
+    bk.quoteInLedger("再改一轮就收", "- Q361 第 4 轮 · 用户「再改一轮就收」", { no: "Q361d", bases: ["Q361"], round: 4 }) &&
+    !bk.quoteInLedger("再改一轮就收", "- Q361 第 4 轮 · 用户「再改一轮就收」", { no: "Q361e", bases: ["Q361"], round: 5 }) &&
+    !bk.quoteInLedger("再改一轮就收", "- Q361 第 4 轮 · 用户「再改一轮就收」", { no: "Q362", bases: ["Q362"], round: 1 }) &&
+    !bk.quoteInLedger("再改一轮就收", "- Q3610 第 4 轮 · 用户「再改一轮就收」", { no: "Q361d", bases: ["Q361"], round: 4 }) &&
+    !bk.quoteInLedger("再改一轮就收", "- Q361d\n用户「再改一轮就收」", { no: "Q361d", bases: ["Q361"], round: 4 }) &&
+    bk.quoteInLedger("再改一轮就收", "- Q361 第 4 轮 · 用户「再改一轮就收」"));
   r = go(tb("Q301d", "上次说的用户点头:「第四轮可以做,做完停」\n"));
   assert("闸17 红:「用户点头」不在行首(只是引用)→ 不算点头行", denied(r) && !/台账里没找到/.test(r.err), r.err.slice(0, 200));
 
@@ -1465,8 +1483,10 @@ for (const tz of BAD_TZ) {
   assert("闸17 红:任务书带〔待用户〕→ 拦", denied(r) && /待用户/.test(r.err) && /用户点头:「原话」/.test(r.err), r.err.slice(0, 200));
   assert("闸17 绿:〔待用户〕只拦一次", allowed(r.again()));
   assert("闸17 记旗标 brake-pending-user", flagsIn(repo, r.sid).split("\n").includes("brake-pending-user"));
-  r = go(tb("Q310", `- 列表默认按时间倒序 ${USER}\n用户点头:「第四轮可以做,做完停」(2031-01-11 08:50,dev 塔)\n`));
-  assert("闸17 绿:〔待用户〕+ 查得到的点头行 → 放行", allowed(r), r.err.slice(0, 200));
+  r = go(tb("Q310", `- 列表默认按时间倒序 ${USER}\n用户点头:「列表倒序可以」(2031-01-11 09:15,product 塔)\n`));
+  assert("闸17 绿:〔待用户〕+ 查得到、跟 Q310 同行的点头行 → 放行", allowed(r), r.err.slice(0, 200));
+  r = go(tb("Q311", `- 列表默认按时间倒序 ${USER}\n用户点头:「列表倒序可以」(2031-01-11 09:15,product 塔)\n`));
+  assert("闸17 红:〔待用户〕+ 点给 Q310 的那句贴进 Q311 → 不认,拦", denied(r) && /和 Q311 写在同一行/.test(r.err), r.err.slice(0, 200));
   r = go(tb("Q310", `- 列表默认按时间倒序 ${USER}\n用户点头:「台账里根本没有这句」(2031-01-11 08:50,dev 塔)\n`));
   assert("闸17 红:〔待用户〕+ 查不到的点头行 → 拦,写明「台账里没找到」", denied(r) && /台账里没找到这句/.test(r.err), r.err.slice(0, 200));
   for (const [name, mark] of [["【】", FW(0x3010) + "待用户" + FW(0x3011)], ["［ ］带空白", FW(0xFF3B) + " 待用户 " + FW(0xFF3D)], ["半角 []", "[待用户]"]]) {
@@ -1555,6 +1575,8 @@ for (const d of SANDBOXES) rmSync(d, { recursive: true, force: true });
   const numbered = files.filter((f) => /铁律\d/.test(code(f)));
   assert("闸门报文按规矩名引用铁律,不写编号", !numbered.length, numbered.join(", "));
   const utc = files.filter((f) => /toISOString\(\)\.slice\(0, ?10\)/.test(code(f)));
+  const tzImpl = files.filter((f) => f !== "lib/config.mjs" && /Intl\.DateTimeFormat/.test(code(f)));
+  assert("按时区取日期时刻只走 lib/now.mjs 一份(别的 hook 不自己 new Intl.DateTimeFormat)", !tzImpl.length, tzImpl.join(", "));
   assert("闸门写的日期走项目时区(不用 UTC 的 toISOString 截日期)", !utc.length, utc.join(", "));
 }
 
