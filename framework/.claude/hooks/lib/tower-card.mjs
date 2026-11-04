@@ -50,13 +50,28 @@ export function section(md, title) {
 }
 
 // 活表「任务会话(短命)」表:| 单号 | 派发塔 | 任务 | 工人会话 | 分支 | 起跑 | 状态 |。
-// 收活时整行删掉,所以还在表里的都算手上的;只拿本塔派的(第二格 = 本塔板块名)。
+// 收活时整行删掉,所以还在表里的都算手上的;只拿本塔派的(派发塔 = 本塔板块名)。
+// 按**表头的列名**取格,不按位置:装了框架的项目沿用旧表头(列序跟模板不同),按位置读就静默报「0 个」。
+//   表头 = Q 行上面最近的那行表头(下一行是 |---|);列名认得出「单号 / 派发塔 / 工人会话」就按名取,认不出才退回模板列序。
+const COLS = { q: /^单号?$/, board: /^(派发)?塔$/, task: /^任务/, sid: /^(工人会话|session_id|会话)/i, started: /^起跑/, status: /^状态/ };
+const cells = (l) => l.split("|").slice(1, -1).map((x) => x.trim());
+function colMap(header) {
+  const hs = cells(header ?? "");
+  const m = Object.fromEntries(Object.entries(COLS).map(([k, re]) => [k, hs.findIndex((h) => re.test(h))]));
+  return m.q >= 0 && m.board >= 0 && m.sid >= 0 ? m : { q: 0, board: 1, task: 2, sid: 3, started: 5, status: 6 };
+}
 export function myWorkers(board, poolText) {
-  return String(poolText ?? "").split("\n")
-    .filter((l) => /^\| *Q\w* *\|/.test(l))
-    .map((l) => l.split("|").slice(1, -1).map((s) => s.trim()))
-    .filter((c) => c[1] === board)
-    .map((c) => ({ q: c[0], task: c[2] ?? "", sid: (c[3] ?? "").replace(/`/g, ""), started: c[5] ?? "", status: c[6] ?? "" }));
+  const lines = String(poolText ?? "").split("\n");
+  const out = [];
+  let header = null;
+  lines.forEach((l, i) => {
+    if (/^\|/.test(l) && /^\|[\s:|-]*-[\s:|-]*\|\s*$/.test(lines[i + 1] ?? "")) header = l;
+    if (!/^\| *Q\w* *\|/.test(l)) return;
+    const c = cells(l), m = colMap(header), at = (k) => (m[k] >= 0 ? c[m[k]] ?? "" : "");
+    if (at("board") === board)
+      out.push({ q: at("q"), task: at("task"), sid: at("sid").replace(/`/g, ""), started: at("started"), status: at("status") });
+  });
+  return out;
 }
 
 // 活表塔表里本塔那一行的状态格。行格式跟 whoAmI 认身份用的是同一个:| <板块> | `tower-<板块>` | …;

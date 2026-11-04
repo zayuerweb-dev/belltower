@@ -1193,6 +1193,22 @@ for (const tz of BAD_TZ) {
     c.includes("在跑的工人 2 个") && c.includes("· Q301 · 夹具活甲 · ") && c.includes("在跑 · 回查 10:00") && c.includes("· Q302 · 夹具活乙 · "),
     L.filter((l) => /工人|· Q/.test(l)).join(" / "));
   assert("塔卡:不列别的塔派的工人", !c.includes("Q201") && !c.includes("别塔的活"));
+  {
+    const { pathToFileURL } = await import("node:url");
+    const tcl = await import(pathToFileURL(resolve(".claude/hooks/lib/tower-card.mjs")).href);
+    const old = ["| 单 | session_id | 塔 | 任务 | 状态 |", "|---|---|---|---|---|",
+      "| Q301 | `session_X1` | dev | 旧表头的活 | 在跑 |", "| Q201 | `session_X2` | test | 别塔 | 在跑 |"].join("\n");
+    const w = tcl.myWorkers("dev", old);
+    assert("塔卡 lib:活表表头列序跟模板不同(单 | session_id | 塔 | …)→ 按列名取,照样认出本塔的工人",
+      w.length === 1 && w[0].q === "Q301" && w[0].sid === "session_X1" && w[0].task === "旧表头的活" && w[0].status === "在跑", JSON.stringify(w));
+    const tpl = ["| 单号 | 派发塔 | 任务 | 工人会话 | 分支 | 起跑 | 状态 | 备注 | 另一列 |", "|---|---|---|---|---|---|---|---|---|",
+      "| Q302 | dev | 模板列序 | `session_X3` | b | 10:00 | 在跑 | x | y |"].join("\n");
+    const v = tcl.myWorkers("dev", tpl);
+    assert("塔卡 lib:模板列序 + 项目在后面多加两列 → 照常",
+      v.length === 1 && v[0].sid === "session_X3" && v[0].started === "10:00" && v[0].status === "在跑", JSON.stringify(v));
+    const bare = "| Q303 | dev | 没表头 | `session_X4` | b | 10:00 | 在跑 |";
+    assert("塔卡 lib:没有表头 → 退回模板列序", tcl.myWorkers("dev", bare)[0]?.sid === "session_X4");
+  }
   assert("塔卡:写着「收工」的只报单号、不列细节", c.includes("1 行写着「收工」(Q300)") && !c.includes("夹具活旧"));
   assert("塔卡:接手须知给当前那版的行号(不拿「上一版」、不认别的词里带 dev 的)",
     c.includes("第 5 行") && c.includes("CURRENT-NOTE-SENTINEL") && !c.includes("OLD-NOTE-SENTINEL") && !c.includes("DEVOPS-NOTE-SENTINEL"),
