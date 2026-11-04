@@ -218,7 +218,8 @@ if (bell) {
 //   同一个门铃按第二次是这样,往已断开的工人按新门铃也是这样(platform-facts §1.1)。按的人以为送到了,对方根本没收到。
 // 判据:guard-mcp 在 PostToolUse 记下的回执(旗标 `bell:…`)里,绑的和落进的去掉前缀不相等。
 // 已经善后的不提醒:之后又有一个门铃送到了同一个目标;或者之后没报错地归档 / 打断了落错的那个会话
-//   (transcript 里的 archive_session / interrupt_session)。—— 那个项目第一版不认善后,善后完了又被拦一次,冤。
+//   (transcript 里的 archive_session / interrupt_session,要有结果:只有调用、没有结果的不算善后,跟闸门14「按过要有凭据」一样)。
+//   —— 那个项目第一版不认善后,善后完了又被拦一次,冤。
 // 回执认不出 = guard-mcp 没记,这道闸就不响(fail-open)。
 if (bell) {
   const rings = bell.parseBells(flags);
@@ -227,7 +228,7 @@ if (bell) {
     const calls = transcriptEvents()?.calls ?? [];
     lost = lost.filter((b) =>
       !rings.some((o) => o.ms > b.ms && o.want === b.want && o.got === o.want) &&
-      !calls.some((c) => c.ts > b.ms && !c.isError &&
+      !calls.some((c) => c.ts > b.ms && !c.isError && c.result !== null &&
         (bell.isTool(c.name, "archive_session") || bell.isTool(c.name, "interrupt_session")) &&
         bell.bareSid(c.input?.session_id) === b.got));
   }

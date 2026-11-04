@@ -32,6 +32,8 @@ export function poolSession(board, poolText = readPool()) {
 //   冒号是 `**… dev → test**:…` 那种写法要的。几个目标用 `+ / 、 ,` 隔开(逗号全角半角都认)。
 //   目标是源自己(自留)、是 me(本塔 —— 多半是在记别的塔发给自己的话)、不是板块(→ 用户 / → 各塔)都不算。
 // 返回每条留言一个键:目标排好序用 `+` 连起来(`dev+ops`);一个目标都不剩的留言不返回。
+// 只认这种行格式。收件箱写成别的样子(每个塔一个标题、条目写在标题下)的项目,这里一条都认不出,
+// 闸门14 对它是瞎的 —— 要别的塔动手的那条照这个格式补一行(tower.md〈六条协议〉第 4 条)。
 // 全角标点用码位拼(fromCharCode),不直接敲进正则:源码里看不出全角半角,敲错一个就悄悄只认一种。
 const FW = (...cs) => String.fromCharCode(...cs);
 const TARGET_END = new RegExp(` · |[(${FW(0xFF08)}:${FW(0xFF1A)}]`);   // 目标段到这儿为止:` · ` / 左括号 / 冒号(括号、冒号全角半角都认)
@@ -131,12 +133,14 @@ export function parseBells(flagText) {
 //      persistent_session_id(按门铃 id 对);再对不上,取它前面最近一次建的门铃绑的会话;
 //   ② 带 run_once_at / cron_expression 的 create_trigger:到点自己响,不用 fire;
 //   ③ 旗标里 guard-mcp 记的回执(PostToolUse)。
-// 报错的不算(往已归档的会话建门铃当场报错,platform-facts §1.1)。
+// 报错的不算(往已归档的会话建门铃当场报错,platform-facts §1.1);转录里只有调用、没有结果的也不算 ——
+// 「按过」要有凭据。用户拒绝、钩子拦、中断,平台都会写一条报错的结果,剩下没结果的是转录缺了那条;
+// 当它按过,闸门14 就没凭据放行了(装了框架的项目审查出来的)。①② 都照这条。
 export function bellsOf(calls, flagText = "") {
   const out = [], made = new Map();
   let last = "";
   for (const c of calls ?? []) {
-    if (c.isError) continue;
+    if (c.isError || c.result === null) continue;
     if (isTool(c.name, "create_trigger") && c.input?.persistent_session_id) {
       const psid = String(c.input.persistent_session_id);
       const id = createdId(c.result);

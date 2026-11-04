@@ -619,6 +619,12 @@ function stop14({ flags = `relay:dev:${T14}\n`, entries = [], pool = POOL14, dir
     "Session is archived; only active sessions can be bound to triggers", true),
     tuse(70000, SRV + "fire_trigger", { trigger_id: "trig_A9" })] });
   assert("红:闸14 建门铃报错了(is_error)不算 → 拦", blocked(r), r.reason.slice(0, 160));
+  // ★ 「按过」要有凭据:转录里只有调用、没有结果的 fire_trigger 不算(门铃 id 对得上 dev 也不算)。装了框架的项目审查出来的
+  r = stop14({ entries: [mkBell(60000, S_DEV, "trig_A11"), tuse(70000, SRV + "fire_trigger", { trigger_id: "trig_A11" })] });
+  assert("红:闸14 按门铃那次转录里只有调用、没有结果 → 不算按过,照拦", blocked(r) && /· → dev/.test(r.reason), r.reason.slice(0, 160));
+  r = stop14({ entries: [tuse(60000, SRV + "create_trigger",
+    { persistent_session_id: S_DEV, prompt: "去读收件箱", run_once_at: "2026-01-06T16:00:00Z" })] });
+  assert("红:闸14 带 run_once_at 的建门铃没有结果 → 不算,照拦", blocked(r) && /· → dev/.test(r.reason), r.reason.slice(0, 160));
   r = stop14({ flags: `relay:dev:${T14}\nbell:trig_A10:DEVTOWER0000000001:DEVTOWER0000000001:${T14 + 5000}\n` });
   assert("绿:闸14 transcript 里没有、旗标里有 PostToolUse 记的回执,绑的是 dev → 放行", stopOk(r), r.reason.slice(0, 160));
   r = stop14({ flags: `relay:dev:${T14}\nbell:trig_A10:DEVTOWER0000000001:DEVTOWER0000000001:${T14 - 5000}\n` });
@@ -692,6 +698,8 @@ function stop14({ flags = `relay:dev:${T14}\n`, entries = [], pool = POOL14, dir
   assert("红:闸15 归档发生在按门铃之前 → 照提醒", blocked(r), r.reason.slice(0, 160));
   r = stop14({ flags: B("trig_C13", D, EMPTY, 1000), entries: [tuse(3000, ARCH, { session_id: `session_${EMPTY}` }, "boom", true)] });
   assert("红:闸15 归档那次报错了 → 照提醒", blocked(r), r.reason.slice(0, 160));
+  r = stop14({ flags: B("trig_C14", D, EMPTY, 1000), entries: [tuse(3000, ARCH, { session_id: `session_${EMPTY}` })] });
+  assert("红:闸15 归档那次转录里只有调用、没有结果 → 不算善后,照提醒", blocked(r) && /trig_C14/.test(r.reason), r.reason.slice(0, 160));
 }
 // ★ 派工人那道闸的接线:平台上 MCP 服务的名字因环境而异(有的是可读名,有的是一串 ID),
 //   matcher 写死一个名字,换个环境闸门10 就整个不响。matcher 是正则,两种名字都要匹配得上。
