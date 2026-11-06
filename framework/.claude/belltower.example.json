@@ -12,5 +12,10 @@
     "edit": "((^|/)(sensitive|private-data)/|(^|/)credentials?\\.json$|(^|/)secrets?\\.json$|\\.(pem|pfx|p12)$)"
   },
   "directPush": [],
-  "brakeRounds": 3
+  "brakeRounds": 3,
+  "tiers": {
+    "mid": ["**/api/**", "**/auth/**"],
+    "big": ["**/migrations/**", "**/security/**"],
+    "fullTestCmd": ""
+  }
 }

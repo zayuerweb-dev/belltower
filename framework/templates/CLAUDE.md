@@ -164,6 +164,10 @@ product 的 [推断] 会改行为的标〔待用户〕、去问用户,dev 不开
 现数 `node scripts/brake.mjs rounds Qnnn` / `batch`。见 `dispatch.md` §12。
 *教训:装了框架的项目里,一夜之间 test 的门铃响了几十次、同一件东西一夜合了 8 轮 —— 环里没有「停」。*
 
+**交付分档:改动多大,验多少。** dev 派工时判档(小 / 中 / 大)写进任务书,`node scripts/tier.mjs --claim <档>` 按改动的文件兜底,
+只能往上调;全量回归一单只跑一次(`.claude/belltower.json` 的 `tiers.fullTestCmd`),test 认 dev 那次、按档验。见 `dispatch.md` §13。
+*教训:一个项目里,每单不管大小都走全套,一单从派出到验过平均要 20 小时;分档后约 14 小时。*
+
 ### ★ 台账走 `main`,代码走自己分支
 
 **总线只有一条才叫总线。** 各塔被开在各自分支上,写在自己分支的台账别的塔读不到 ——

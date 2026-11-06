@@ -1579,6 +1579,55 @@ for (const h of ["guard-bash.mjs", "guard-edit.mjs", "guard-stop.mjs"]) {
   assert(`${h} 解析失败时放行`, r.status === 0, `code=${r.status}`);
 }
 
+// ── 交付分档:scripts/tier.mjs 按文件兜底(规矩见 dispatch.md「交付分档」)────────────────
+{
+  const { pathToFileURL } = await import("node:url");
+  const t = await import(pathToFileURL(resolve("scripts/tier.mjs")).href);
+  const TIER = resolve("scripts/tier.mjs");
+  const run = (dir, ...args) => {
+    const x = spawnSync(process.execPath, [TIER, ...args], { cwd: dir, encoding: "utf8" });
+    return { code: x.status, out: x.stdout ?? "", err: x.stderr ?? "" };
+  };
+  assert("分档 lib:路径模式 —— `**/` 含零层目录、`*` 不跨 `/`、整条对上、点号照字面",
+    t.globRe("**/api/**").test("api/x.ts") && t.globRe("**/api/**").test("src/api/v1/x.ts") && !t.globRe("**/api/**").test("src/apis/x.ts") &&
+    t.globRe("src/*.css").test("src/a.css") && !t.globRe("src/*.css").test("src/b/a.css") && !t.globRe("src/*.css").test("src/axcss") &&
+    t.globRe("") === null && t.globRe(3) === null);
+  const TI = { mid: ["**/api/**"], big: ["**/migrations/**"] };
+  let f = t.floorOf(["src/a.css", "README.md"], TI);
+  assert("分档 lib:没碰配的路径 → 最低小、没有命中", f.tier === "小" && f.hits.length === 0, JSON.stringify(f));
+  f = t.floorOf(["src/a.css", "src/api/x.ts"], TI);
+  assert("分档 lib:碰到 mid 的路径 → 最低中", f.tier === "中" && f.hits.length === 1 && f.hits[0].file === "src/api/x.ts", JSON.stringify(f));
+  f = t.floorOf(["src/api/x.ts", "db/migrations/001.sql"], TI);
+  assert("分档 lib:碰到 big 的路径 → 大(一个文件只记一档,big 先看)", f.tier === "大" && f.hits.length === 2, JSON.stringify(f));
+  assert("分档 lib:big 和 mid 都配成空数组 → 不兜底", t.floorOf(["db/migrations/1.sql"], { mid: [], big: [] }).tier === "小");
+
+  const d = withCfg(sandbox(), { tiers: { mid: ["web/**"], big: ["schema/**"], fullTestCmd: "make test-all" } });
+  let c = run(d, "--claim", "小", "--", "web/page.tsx", "docs/a.md");
+  assert("tier:项目配置的路径生效,判小低于最低中 → 退出 1、说按中走、带全量命令",
+    c.code === 1 && /按「中」走/.test(c.out) && /中 · web\/page\.tsx · 命中 web\/\*\*/.test(c.out) && /全量回归:make test-all/.test(c.out), c.out + c.err);
+  c = run(d, "--claim", "大", "--json", "--", "schema/t.sql");
+  let j = null; try { j = JSON.parse(c.out); } catch {}
+  assert("tier --json:判大、最低大 → 退出 0、ok", c.code === 0 && j && j.floor === "大" && j.ok === true && j.hits.length === 1, c.out + c.err);
+  c = run(sandbox(), "--", "src/api/x.ts");
+  assert("tier:没有项目配置 → 用默认路径(api 算中),没配全量命令要提示", c.code === 0 && /最低「中」/.test(c.out) && /fullTestCmd 没配/.test(c.out), c.out + c.err);
+  withCfg(d, { tiers: { mid: "web/**", big: [3] } });
+  c = run(d, "--json", "--", "src/api/x.ts", "web/a.ts");
+  j = null; try { j = JSON.parse(c.out); } catch {}
+  assert("tier:tiers 写坏了(不是数组 / 混进非字符串)→ 用默认", c.code === 0 && j && j.floor === "中" && j.hits.map((h) => h.file).join() === "src/api/x.ts", c.out + c.err);
+  assert("tier:参数错(档写错 / 不认识的参数 / --claim 没值)→ 退出 2",
+    run(d, "--claim", "特大", "--", "a").code === 2 && run(d, "--bogus").code === 2 && run(d, "--claim").code === 2);
+
+  const g = gitSandbox();
+  writeFileSync(join(g, "README.md"), "x\n");
+  gitq(g, "add", "."); gitq(g, "commit", "-qm", "init"); gitq(g, "push", "-q", "origin", "main");
+  mkdirSync(join(g, "db/migrations"), { recursive: true });
+  writeFileSync(join(g, "db/migrations/002.sql"), "x\n");
+  gitq(g, "add", "."); gitq(g, "commit", "-qm", "迁移");
+  c = run(g, "--claim", "中");
+  assert("tier:默认读 origin/main...HEAD 改了的文件 —— 动了迁移 → 最低大,判中退出 1", c.code === 1 && /大 · db\/migrations\/002\.sql/.test(c.out) && /origin\/main\.\.\.HEAD/.test(c.out), c.out + c.err);
+  assert("tier:读不到 ref → 退出 2", run(g, "--base", "origin/nope").code === 2);
+}
+
 for (const d of SANDBOXES) rmSync(d, { recursive: true, force: true });
 
 // ── 报文与台账日期:不写死铁律编号、不用 UTC 日期 ───────────────────────

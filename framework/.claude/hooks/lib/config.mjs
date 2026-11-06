@@ -25,6 +25,15 @@ export const DEFAULTS = Object.freeze({
   directPush: [],
   // 刹车(闸门17):同一家号最多合几轮,再派要用户点头(dispatch.md「刹车」)。0 = 关掉轮次封顶;不是非负整数 = 用默认值。
   brakeRounds: 3,
+  // 交付分档(dispatch.md「交付分档」):按改动大小定 dev / test 各验多少。档由 dev 判,scripts/tier.mjs 按文件给最低档:
+  //   动到 big 里的路径 = 大;动到 mid 里的 = 最低中;都没碰 = 不兜底(还是 dev 判)。
+  //   路径模式:`**/` 任意层目录、`*` 一段里任意字符;相对仓库根、整条对上。下面只是常见目录名的例子,**项目按自己的目录改**。
+  //   fullTestCmd = 项目自己的全量回归命令(一单只跑一次,跑在收活的合并树上);空 = 没配。
+  tiers: Object.freeze({
+    mid: Object.freeze(["**/api/**", "**/auth/**"]),
+    big: Object.freeze(["**/migrations/**", "**/security/**"]),
+    fullTestCmd: "",
+  }),
 });
 
 // directPush 的一项:仓库内的相对路径,一项一个文件,写成 git 自己打印的样子 ——
@@ -39,6 +48,17 @@ const repoFile = (p) => typeof p === "string" && REPO_FILE.test(p) &&
 // timezone 要是 Intl 认得的时区名;写坏了(拼错、不存在的区、空串)= 用默认时区。
 // 不在这儿兜,lib/now.mjs 一抛错,开局 hook 和每轮时刻行就整个出不来(测出来过:写成 Mars/Olympus,两个都退出 1)。
 const tzOk = (z) => { try { new Intl.DateTimeFormat("en-US", { timeZone: z }); return true; } catch { return false; } };
+
+// tiers:mid / big 各是字符串数组(空数组 = 这一档不兜底);写坏了(不是数组、混进非字符串)用默认。fullTestCmd 是字符串。
+const tierList = (v, d) => (Array.isArray(v) && v.every((x) => typeof x === "string" && x) ? [...v] : [...d]);
+function tiersOf(t) {
+  const o = t && typeof t === "object" && !Array.isArray(t) ? t : {};
+  return {
+    mid: tierList(o.mid, DEFAULTS.tiers.mid),
+    big: tierList(o.big, DEFAULTS.tiers.big),
+    fullTestCmd: typeof o.fullTestCmd === "string" ? o.fullTestCmd : DEFAULTS.tiers.fullTestCmd,
+  };
+}
 
 let cached = null;
 export function config() {
@@ -65,6 +85,7 @@ export function config() {
     },
     directPush: Array.isArray(raw.directPush) ? [...new Set(raw.directPush.filter(repoFile))] : [],
     brakeRounds: Number.isInteger(raw.brakeRounds) && raw.brakeRounds >= 0 ? raw.brakeRounds : DEFAULTS.brakeRounds,
+    tiers: tiersOf(raw.tiers),
   };
   if (!cached.boards.length) cached.boards = [...DEFAULTS.boards];
   // directPush 不收代码:codeDirs 底下的、codeExt 扩展名的一律丢掉。

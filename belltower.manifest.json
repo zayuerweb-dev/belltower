@@ -1,6 +1,6 @@
 {
   "name": "belltower",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "upstream": "https://github.com/zayuerweb-dev/belltower",
   "_comment": "framework = 框架文件,belltower-sync 会覆盖更新;init = 起步模板,只在 belltower-init 时拷一次、之后归项目,sync 永远不碰。路径:src 相对本仓库根,dst 相对项目根。",
   "framework": [
@@ -23,6 +23,7 @@
     { "src": "framework/.claude/skills/tower-meta/references/patrol.md", "dst": ".claude/skills/tower-meta/references/patrol.md" },
     { "src": "framework/scripts/ledger-push.mjs", "dst": "scripts/ledger-push.mjs" },
     { "src": "framework/scripts/brake.mjs", "dst": "scripts/brake.mjs" },
+    { "src": "framework/scripts/tier.mjs", "dst": "scripts/tier.mjs" },
     { "src": "framework/scripts/lib/direct-push.mjs", "dst": "scripts/lib/direct-push.mjs" },
     { "src": "framework/scripts/test-hooks.mjs", "dst": "scripts/test-hooks.mjs" },
     { "src": "framework/scripts/test-ledger-push.mjs", "dst": "scripts/test-ledger-push.mjs" },
